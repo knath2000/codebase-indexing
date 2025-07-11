@@ -48,7 +48,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
         },
         {
           name: 'search_code',
-          description: 'Search for code chunks using semantic similarity',
+          description: 'Search for code using semantic similarity',
           inputSchema: {
             type: 'object',
             properties: {
@@ -62,12 +62,11 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
               },
               chunk_type: {
                 type: 'string',
-                enum: ['function', 'class', 'module', 'interface', 'type', 'variable', 'import', 'comment', 'generic'],
-                description: 'Type of code chunk to search for (optional)'
+                description: 'Type of code chunk to search for (function, class, etc.)'
               },
               file_path: {
                 type: 'string',
-                description: 'Specific file to search in (optional)'
+                description: 'File path to search within (optional)'
               },
               limit: {
                 type: 'number',
@@ -89,7 +88,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             properties: {
               query: {
                 type: 'string',
-                description: 'Search query for functions'
+                description: 'Function name or description to search for'
               },
               language: {
                 type: 'string',
@@ -111,7 +110,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             properties: {
               query: {
                 type: 'string',
-                description: 'Search query for classes'
+                description: 'Class name or description to search for'
               },
               language: {
                 type: 'string',
@@ -137,7 +136,11 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
               },
               limit: {
                 type: 'number',
-                description: 'Maximum number of results to return (default: 5)'
+                description: 'Maximum number of results to return (default: 10)'
+              },
+              threshold: {
+                type: 'number',
+                description: 'Minimum similarity threshold (default: 0.7)'
               }
             },
             required: ['chunk_id']
@@ -155,7 +158,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
               },
               context_lines: {
                 type: 'number',
-                description: 'Number of context lines to include (default: 5)'
+                description: 'Number of lines of context to include (default: 5)'
               }
             },
             required: ['chunk_id']
@@ -232,6 +235,11 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
     }
 
     try {
+      // Ensure services are initialized before tool execution
+      if ('ensureServicesInitialized' in globalThis) {
+        await (globalThis as any).ensureServicesInitialized();
+      }
+
       switch (name) {
         case 'index_directory':
           const dirStats = await indexingService.indexDirectory(args.directory_path as string);
@@ -269,13 +277,13 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'search_functions':
-          const funcResults = await searchService.searchFunctions(args.query as string, args.language as string, args.limit as number);
+          const functionResults = await searchService.searchFunctions(args.query as string, args.language as string, args.limit as number);
           return {
             content: [{
               type: 'text',
               text: `Function search results for "${args.query}":\n\n` +
-                    funcResults.map((result: any, index: number) => 
-                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
+                    functionResults.map((result: any, index: number) => 
+                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
                       `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
                     ).join('\n\n')
             }]
@@ -287,19 +295,19 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
               type: 'text',
               text: `Class search results for "${args.query}":\n\n` +
                     classResults.map((result: any, index: number) => 
-                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
+                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
                       `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
                     ).join('\n\n')
             }]
           };
         case 'find_similar':
-          const similarResults = await searchService.findSimilar(args.chunk_id as string, args.limit as number || 5);
+          const similarResults = await searchService.findSimilar(args.chunk_id as string, args.limit as number);
           return {
             content: [{
               type: 'text',
-              text: `Similar chunks for "${args.chunk_id}":\n\n` +
+              text: `Similar chunks to "${args.chunk_id}":\n\n` +
                     similarResults.map((result: any, index: number) => 
-                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.chunkType} in ${result.chunk.filePath}:${result.chunk.startLine}\n` +
+                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
                       `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
                     ).join('\n\n')
             }]

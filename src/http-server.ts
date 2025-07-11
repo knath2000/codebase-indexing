@@ -36,20 +36,18 @@ app.get('/', (_req: Request, res: Response) => {
 let mcpServer: Server | null = null;
 let indexingService: IndexingService | null = null;
 let searchService: SearchService | null = null;
+let servicesInitialized = false;
 
-// Initialize MCP server once
+// Initialize MCP server quickly (without heavy network calls)
 async function initializeMcpServer() {
   if (mcpServer) return;
   
   const config = loadConfig();
   validateConfig(config);
   
+  // Create services but don't initialize them yet
   indexingService = new IndexingService(config);
   searchService = new SearchService(config);
-  
-  // Initialize services
-  await indexingService.initialize();
-  await searchService.initialize();
   
   // Create MCP server
   mcpServer = new Server(
@@ -67,8 +65,30 @@ async function initializeMcpServer() {
   // Setup MCP tools
   setupMcpTools(mcpServer, indexingService, searchService);
   
-  console.log('MCP server initialized');
+  console.log('MCP server initialized (services will initialize on first use)');
 }
+
+// Initialize services lazily (on first tool use)
+async function ensureServicesInitialized(): Promise<void> {
+  if (servicesInitialized || !indexingService || !searchService) return;
+  
+  console.log('Initializing services...');
+  
+  try {
+    // Initialize services with network calls
+    await indexingService.initialize();
+    await searchService.initialize();
+    
+    servicesInitialized = true;
+    console.log('Services initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize services:', error);
+    throw error;
+  }
+}
+
+// Expose ensureServicesInitialized globally for tool handlers
+(globalThis as any).ensureServicesInitialized = ensureServicesInitialized;
 
 // MCP endpoint - handle both GET (SSE) and POST (JSON-RPC) requests
 app.all('/mcp', async (req: Request, res: Response) => {
