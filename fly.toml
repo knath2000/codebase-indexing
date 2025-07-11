@@ -1,0 +1,72 @@
+# fly.toml app configuration file
+app = "mcp-codebase-indexing"
+primary_region = "dfw"
+
+# Build configuration
+[build]
+  dockerfile = "Dockerfile"
+
+# Environment variables
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+
+# HTTP service configuration
+[[services]]
+  protocol = "tcp"
+  internal_port = 3001
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["http", "tls"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "1s"
+    restart_limit = 0
+
+  [[services.http_checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    restart_limit = 0
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    tls_skip_verify = false
+
+# Auto-scaling configuration
+[machines]
+  machine_type = "shared-cpu-1x"
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  max_machines_running = 3
+
+# Resource allocation
+[resource]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Metrics and monitoring
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+# Secrets (you'll need to set these via flyctl)
+# flyctl secrets set VOYAGE_API_KEY=your_key_here
+# flyctl secrets set QDRANT_API_KEY=your_key_here
+# flyctl secrets set QDRANT_URL=your_url_here 
