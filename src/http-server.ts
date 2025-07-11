@@ -101,7 +101,7 @@ function sendSSEEvent(res: Response, event: string, data: any) {
 }
 
 // Handle GET requests for SSE connection
-app.get('/mcp', async (req: Request, res: Response) => {
+app.get('/mcp', async (_req: Request, res: Response) => {
   try {
     if (!mcpServer) {
       throw new Error('MCP server not initialized');
@@ -180,7 +180,7 @@ app.get('/mcp', async (req: Request, res: Response) => {
 });
 
 // Handle POST requests for JSON-RPC
-app.post('/mcp', async (req: Request, res: Response) => {
+app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!mcpServer) {
       throw new Error('MCP server not initialized');
@@ -189,7 +189,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
     const { jsonrpc, id, method, params } = req.body;
     
     if (jsonrpc !== '2.0') {
-      return res.status(400).json({
+      res.status(400).json({
         jsonrpc: '2.0',
         id,
         error: {
@@ -197,6 +197,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
           message: 'Invalid JSON-RPC version'
         }
       });
+      return;
     }
     
     console.log(`Received JSON-RPC request: ${method}`);
@@ -239,7 +240,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
           break;
           
         default:
-          return res.status(400).json({
+          res.status(400).json({
             jsonrpc: '2.0',
             id,
             error: {
@@ -247,6 +248,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
               message: `Method not found: ${method}`
             }
           });
+          return;
       }
       
       res.json({
@@ -254,6 +256,8 @@ app.post('/mcp', async (req: Request, res: Response) => {
         id,
         result
       });
+      
+      return;
       
     } catch (error) {
       console.error(`Error handling ${method}:`, error);
@@ -277,6 +281,7 @@ app.post('/mcp', async (req: Request, res: Response) => {
         message: 'Internal server error'
       }
     });
+    return;
   }
 });
 
