@@ -135,7 +135,7 @@ app.get('/mcp', async (_req: Request, res: Response) => {
         streaming: true
       },
       status: 'ready',
-      protocol_version: '2024-11-05'
+      protocolVersion: '2024-11-05'
     });
     
     // Send session created event
@@ -238,6 +238,12 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
           );
           result = toolResponse;
           break;
+
+        // Handle notification that does not expect a response
+        case 'notifications/initialized':
+          // This is a JSON-RPC notification (no id). Acknowledge with 204 No Content
+          res.status(204).send();
+          return;
           
         default:
           res.status(400).json({
