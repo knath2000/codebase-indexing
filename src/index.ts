@@ -3,7 +3,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { Config } from './types.js';
+import { Config, ChunkType } from './types.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
@@ -60,9 +60,22 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                 type: 'string',
                 description: 'Programming language to filter by (optional)'
               },
+              chunk_type: {
+                type: 'string',
+                enum: ['function', 'class', 'module', 'interface', 'type', 'variable', 'import', 'comment', 'generic'],
+                description: 'Type of code chunk to search for (optional)'
+              },
+              file_path: {
+                type: 'string',
+                description: 'Specific file to search in (optional)'
+              },
               limit: {
                 type: 'number',
                 description: 'Maximum number of results to return (default: 10)'
+              },
+              threshold: {
+                type: 'number',
+                description: 'Minimum similarity threshold (default: 0.7)'
               }
             },
             required: ['query']
@@ -113,6 +126,42 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           }
         },
         {
+          name: 'find_similar',
+          description: 'Find code chunks similar to a given chunk',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chunk_id: {
+                type: 'string',
+                description: 'ID of the chunk to find similar chunks for'
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum number of results to return (default: 5)'
+              }
+            },
+            required: ['chunk_id']
+          }
+        },
+        {
+          name: 'get_code_context',
+          description: 'Get code context around a specific chunk',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              chunk_id: {
+                type: 'string',
+                description: 'ID of the chunk to get context for'
+              },
+              context_lines: {
+                type: 'number',
+                description: 'Number of context lines to include (default: 5)'
+              }
+            },
+            required: ['chunk_id']
+          }
+        },
+        {
           name: 'get_indexing_stats',
           description: 'Get statistics about the indexed codebase',
           inputSchema: {
@@ -134,6 +183,34 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           inputSchema: {
             type: 'object',
             properties: {}
+          }
+        },
+        {
+          name: 'remove_file',
+          description: 'Remove a file from the search index',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file_path: {
+                type: 'string',
+                description: 'Path to the file to remove from index'
+              }
+            },
+            required: ['file_path']
+          }
+        },
+        {
+          name: 'reindex_file',
+          description: 'Re-index a file (force update)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file_path: {
+                type: 'string',
+                description: 'Path to the file to re-index'
+              }
+            },
+            required: ['file_path']
           }
         }
       ]
@@ -176,7 +253,10 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           const codeResults = await searchService.search({
             query: args.query as string,
             language: args.language as string,
-            limit: args.limit as number
+            chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
+            filePath: args.file_path as string,
+            limit: args.limit as number,
+            threshold: args.threshold as number
           });
           return {
             content: [{
@@ -212,6 +292,38 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                     ).join('\n\n')
             }]
           };
+        case 'find_similar':
+          const similarResults = await searchService.findSimilar(args.chunk_id as string, args.limit as number || 5);
+          return {
+            content: [{
+              type: 'text',
+              text: `Similar chunks for "${args.chunk_id}":\n\n` +
+                    similarResults.map((result: any, index: number) => 
+                      `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.chunkType} in ${result.chunk.filePath}:${result.chunk.startLine}\n` +
+                      `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
+                    ).join('\n\n')
+            }]
+          };
+        case 'get_code_context':
+          const contextResult = await searchService.getCodeContext(args.chunk_id as string, args.context_lines as number || 5);
+          if (!contextResult) {
+            return {
+              content: [{
+                type: 'text',
+                text: `Chunk "${args.chunk_id}" not found`
+              }]
+            };
+          }
+          return {
+            content: [{
+              type: 'text',
+              text: `Code context for chunk "${args.chunk_id}":\n\n` +
+                    `File: ${contextResult.chunk.filePath}\n` +
+                    `Lines: ${contextResult.chunk.startLine}-${contextResult.chunk.endLine}\n` +
+                    `Type: ${contextResult.chunk.chunkType}\n\n` +
+                    `\`\`\`${contextResult.chunk.language}\n${contextResult.context}\n\`\`\``
+            }]
+          };
         case 'get_indexing_stats':
           const stats = indexingService.getStats();
           return {
@@ -238,6 +350,22 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             content: [{
               type: 'text',
               text: 'Successfully cleared the search index'
+            }]
+          };
+        case 'remove_file':
+          await indexingService.removeFile(args.file_path as string);
+          return {
+            content: [{
+              type: 'text',
+              text: `Successfully removed file "${args.file_path}" from the search index`
+            }]
+          };
+        case 'reindex_file':
+          const reindexChunks = await indexingService.indexFile(args.file_path as string);
+          return {
+            content: [{
+              type: 'text',
+              text: `Successfully re-indexed file "${args.file_path}"\nGenerated ${reindexChunks.length} chunks`
             }]
           };
         default:

@@ -70,20 +70,20 @@ async function initializeMcpServer() {
   console.log('MCP server initialized');
 }
 
-// MCP endpoint
-app.get('/mcp', async (_req: Request, res: Response) => {
+// MCP endpoint - handle both GET (SSE) and POST (JSON-RPC) requests
+app.all('/mcp', async (req: Request, res: Response) => {
   try {
     if (!mcpServer) {
       throw new Error('MCP server not initialized');
     }
     
-    // Create SSE transport
+    // Create SSE transport that handles both GET and POST
     const transport = new SSEServerTransport('/mcp', res);
     
     // Connect server to transport
     await mcpServer.connect(transport);
     
-    console.log('MCP client connected via SSE transport');
+    console.log(`MCP client ${req.method} request handled via SSE transport`);
     
   } catch (error) {
     console.error('Failed to handle MCP connection:', error);

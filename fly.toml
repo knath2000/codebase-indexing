@@ -1,5 +1,5 @@
 # fly.toml app configuration file
-app = "mcp-codebase-indexing"
+app = "codebase-indexing"
 primary_region = "dfw"
 
 # Build configuration
