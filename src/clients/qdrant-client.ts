@@ -32,6 +32,9 @@ export class QdrantVectorClient {
           }
         });
         console.log(`Created collection: ${this.collectionName}`);
+        
+        // Create payload indexes for filtering capabilities
+        await this.createPayloadIndexes();
       } else {
         // Check if existing collection has correct dimensions
         const collectionInfo = await this.client.getCollection(this.collectionName);
@@ -43,6 +46,8 @@ export class QdrantVectorClient {
           await this.recreateCollection();
         } else {
           console.log(`✅ Collection exists with correct dimensions: ${this.embeddingDimension}`);
+          // Ensure payload indexes exist (idempotent operation)
+          await this.createPayloadIndexes();
         }
       }
     } catch (error) {
@@ -78,9 +83,63 @@ export class QdrantVectorClient {
       });
       
       console.log(`✅ Successfully recreated collection: ${this.collectionName}`);
+      
+      // Create payload indexes for filtering capabilities
+      await this.createPayloadIndexes();
+      
     } catch (error) {
       throw new Error(`Failed to recreate collection: ${error}`);
     }
+  }
+
+  /**
+   * Create payload indexes for filtering capabilities (matching Cursor's @codebase functionality)
+   */
+  private async createPayloadIndexes(): Promise<void> {
+    console.log(`🔧 [Qdrant] Creating payload indexes for enhanced filtering...`);
+    
+    try {
+      // Index for chunkType filtering (function, class, interface, etc.)
+      await this.client.createPayloadIndex(this.collectionName, {
+        field_name: 'chunkType',
+        field_schema: 'keyword'
+      });
+      console.log(`✅ [Qdrant] Created chunkType index for filtering by code elements`);
+      
+      // Index for language filtering (typescript, javascript, etc.)
+      await this.client.createPayloadIndex(this.collectionName, {
+        field_name: 'language',
+        field_schema: 'keyword'
+      });
+      console.log(`✅ [Qdrant] Created language index for filtering by programming language`);
+      
+      // Index for filePath filtering
+      await this.client.createPayloadIndex(this.collectionName, {
+        field_name: 'filePath',
+        field_schema: 'keyword'
+      });
+      console.log(`✅ [Qdrant] Created filePath index for file-specific searches`);
+      
+      console.log(`🎉 [Qdrant] All payload indexes created successfully - collection ready for @codebase-style filtered searches!`);
+      
+    } catch (error) {
+      // Check if indexes already exist (this is not an error)
+      const errorMsg = String(error).toLowerCase();
+      if (errorMsg.includes('already exists') || errorMsg.includes('conflict')) {
+        console.log(`ℹ️  [Qdrant] Payload indexes already exist, skipping creation`);
+      } else {
+        console.error(`❌ [Qdrant] Failed to create payload indexes:`, error);
+        throw new Error(`Failed to create payload indexes: ${error}`);
+      }
+    }
+  }
+
+  /**
+   * Create payload indexes on existing collection (useful for upgrading existing collections)
+   */
+  async ensurePayloadIndexes(): Promise<void> {
+    console.log(`🔧 [Qdrant] Ensuring payload indexes exist for collection: ${this.collectionName}`);
+    await this.createPayloadIndexes();
   }
 
   /**

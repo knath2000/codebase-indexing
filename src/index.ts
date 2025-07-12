@@ -211,6 +211,21 @@ export const TOOL_DEFINITIONS = [
       },
       required: ['file_path']
     }
+  },
+  {
+    name: 'create_payload_indexes',
+    description: 'Create payload indexes for filtering (chunkType, language, filePath) on existing collection',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        force: { 
+          type: 'boolean', 
+          description: 'Force creation even if indexes might exist',
+          default: false 
+        }
+      },
+      required: []
+    }
   }
 ];
 
@@ -379,6 +394,19 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
               text: `Successfully re-indexed file "${args.file_path}"\nGenerated ${reindexChunks.length} chunks`
             }]
           };
+        case 'create_payload_indexes':
+          // Access the Qdrant client through the search service
+          await (searchService as any).qdrantClient.ensurePayloadIndexes();
+          return {
+            content: [{
+              type: 'text',
+              text: '🎉 Successfully created payload indexes for filtering!\n\n' +
+                    '✅ chunkType index - for filtering by code elements (function, class, interface, etc.)\n' +
+                    '✅ language index - for filtering by programming language (typescript, javascript, etc.)\n' +
+                    '✅ filePath index - for file-specific searches\n\n' +
+                    '🔍 Your collection is now ready for @codebase-style filtered searches!'
+            }]
+          };
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -463,6 +491,8 @@ class CodebaseIndexingServer {
             return await this.handleRemoveFile(args);
           case 'reindex_file':
             return await this.handleReindexFile(args);
+          case 'create_payload_indexes':
+            return await this.handleCreatePayloadIndexes(args);
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -746,6 +776,24 @@ class CodebaseIndexingServer {
           type: 'text',
           text: `Successfully re-indexed file: ${file_path}\n` +
                 `Generated ${chunks.length} chunks`
+        }
+      ]
+    };
+  }
+
+  private async handleCreatePayloadIndexes(_args: any) {
+    // Access the Qdrant client through the search service
+    await (this.searchService as any).qdrantClient.ensurePayloadIndexes();
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: '🎉 Successfully created payload indexes for filtering!\n\n' +
+                '✅ chunkType index - for filtering by code elements (function, class, interface, etc.)\n' +
+                '✅ language index - for filtering by programming language (typescript, javascript, etc.)\n' +
+                '✅ filePath index - for file-specific searches\n\n' +
+                '🔍 Your collection is now ready for @codebase-style filtered searches!'
         }
       ]
     };
