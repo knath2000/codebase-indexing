@@ -89,8 +89,8 @@ export class SearchService {
       language: query.language,
       chunkType: query.chunkType,
       filePath: query.filePath,
-      limit: query.limit || 10,
-      threshold: query.threshold || 0.7,
+      limit: query.limit || 50, // Increased from 10 to 50 for better coverage
+      threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
       enableHybrid: query.enableHybrid ?? this.config.enableHybridSearch,
       enableReranking: query.enableReranking ?? this.config.enableLLMReranking
     });
@@ -202,13 +202,13 @@ export class SearchService {
   /**
    * Search for functions by name or description
    */
-  async searchFunctions(query: string, language?: string, limit: number = 10): Promise<SearchResult[]> {
+  async searchFunctions(query: string, language?: string, limit: number = 50): Promise<SearchResult[]> {
     const searchQuery: SearchQuery = {
       query,
       chunkType: ChunkType.FUNCTION,
       language,
       limit,
-      threshold: 0.7
+      threshold: 0.4 // Lowered from 0.5 for better results
     };
 
     return this.search(searchQuery);
@@ -217,13 +217,13 @@ export class SearchService {
   /**
    * Search for classes by name or description
    */
-  async searchClasses(query: string, language?: string, limit: number = 10): Promise<SearchResult[]> {
+  async searchClasses(query: string, language?: string, limit: number = 50): Promise<SearchResult[]> {
     const searchQuery: SearchQuery = {
       query,
       chunkType: ChunkType.CLASS,
       language,
       limit,
-      threshold: 0.7
+      threshold: 0.4 // Lowered from 0.5 for better results
     };
 
     return this.search(searchQuery);
@@ -232,13 +232,13 @@ export class SearchService {
   /**
    * Search for interfaces by name or description
    */
-  async searchInterfaces(query: string, language?: string, limit: number = 10): Promise<SearchResult[]> {
+  async searchInterfaces(query: string, language?: string, limit: number = 50): Promise<SearchResult[]> {
     const searchQuery: SearchQuery = {
       query,
       chunkType: ChunkType.INTERFACE,
       language,
       limit,
-      threshold: 0.7
+      threshold: 0.4 // Lowered from 0.5 for better results
     };
 
     return this.search(searchQuery);
@@ -252,21 +252,21 @@ export class SearchService {
       query,
       filePath,
       limit,
-      threshold: 0.6
+      threshold: 0.5 // Lowered from 0.6 for consistency
     };
 
     return this.search(searchQuery);
   }
 
   /**
-   * Search by language
+   * Search for code by programming language
    */
-  async searchByLanguage(query: string, language: string, limit: number = 10): Promise<SearchResult[]> {
+  async searchByLanguage(query: string, language: string, limit: number = 50): Promise<SearchResult[]> {
     const searchQuery: SearchQuery = {
       query,
       language,
       limit,
-      threshold: 0.7
+      threshold: 0.4 // Lowered from 0.5 for better results
     };
 
     return this.search(searchQuery);

@@ -236,8 +236,8 @@ export class QdrantVectorClient {
   ): Promise<SearchResult[]> {
     console.log(`🔍 [Qdrant] Starting search with query: "${query.query}"`);
     console.log(`🔍 [Qdrant] Search parameters:`, {
-      limit: query.limit || 10,
-      threshold: query.threshold || 0.7,
+      limit: query.limit || 50, // Increased from 10 to 50 for better coverage
+      threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
       language: query.language,
       filePath: query.filePath,
       chunkType: query.chunkType,
@@ -256,10 +256,10 @@ export class QdrantVectorClient {
 
       const searchParams: any = {
         vector: queryVector,
-        limit: query.limit || 10,
-        score_threshold: query.threshold || 0.7,
+        limit: query.limit || 50, // Increased from 10 to 50 for better coverage
+        score_threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
         with_payload: true,
-        with_vector: false // Don't return vectors to save bandwidth
+        with_vector: false
       };
 
       // Build filters based on query parameters
@@ -358,37 +358,30 @@ export class QdrantVectorClient {
       return [];
     }
 
-    // Very naive scoring: term frequency of query tokens in content/snippet
-    const tokens = searchText.split(/\s+/).filter(Boolean);
-    const results: SearchResult[] = [];
-
-    for (const point of allPoints) {
-      const content = point.payload.content.toLowerCase();
-      let score = 0;
-      for (const token of tokens) {
-        // Increment score by occurrences (basic TF)
-        const occurrences = content.split(token).length - 1;
-        score += occurrences;
-      }
-      if (score > 0) {
+    // Score and sort results by relevance
+    const scoredResults = allPoints
+      .map(point => {
         const chunk = this.payloadToCodeChunk(point.payload);
         chunk.id = String(point.id);
-        results.push({
-          id: String(point.id),
-          score,
+        return {
+          point,
           chunk,
-          snippet: this.createSnippet(point.payload),
-          context: this.createContextDescription(point.payload)
-        });
-      }
-    }
+          score: this.calculateKeywordScore(searchText, point.payload.content)
+        };
+      })
+      .filter(result => result.score > (query.threshold || 0.4)) // Use consistent threshold
+      .sort((a, b) => b.score - a.score)
+      .slice(0, query.limit || 50); // Use consistent limit
 
-    // Normalize and sort (higher scores first)
-    const maxScore = results.reduce((m, r) => (r.score > m ? r.score : m), 1);
-    results.forEach(r => (r.score = r.score / maxScore));
-    results.sort((a, b) => b.score - a.score);
+    const results: SearchResult[] = scoredResults.map(result => ({
+      id: String(result.point.id),
+      score: result.score,
+      chunk: result.chunk,
+      snippet: this.createSnippet(result.point.payload),
+      context: this.createContextDescription(result.point.payload)
+    }));
 
-    return results.slice(0, query.limit || 20);
+    return results;
   }
 
   /**
@@ -581,5 +574,22 @@ export class QdrantVectorClient {
     parts.push(`💻 ${payload.language}`);
     
     return parts.join(' | ');
+  }
+
+  /**
+   * Calculate keyword score for keyword search.
+   * This is a very basic TF-IDF-like scoring.
+   * For a real-world application, you'd need a proper tokenizer, stopwords,
+   * and a more sophisticated scoring mechanism.
+   */
+  private calculateKeywordScore(query: string, content: string): number {
+    const tokens = query.split(/\s+/).filter(Boolean);
+    let score = 0;
+
+    for (const token of tokens) {
+      const occurrences = content.split(token).length - 1;
+      score += occurrences;
+    }
+    return score;
   }
 } 
