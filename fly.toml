@@ -48,18 +48,19 @@ primary_region = "dfw"
     tls_skip_verify = false
 
 # Auto-scaling configuration
-[machines]
-  machine_type = "performance-2x"  # Upgraded from shared-cpu-1x for better vector search performance
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 0
-  max_machines_running = 3
+[vm]
+  # Dedicated performance plan with 2 vCPUs and 2 GB RAM
+  size = "performance-2x"
+  # Explicitly set resources for clarity (Fly derives these from size, but it's good to be explicit)
+  memory_mb = 2048
+  cpus = 2
+  cpu_kind = "performance"
 
-# Resource allocation
-[resource]
-  memory = "2gb"      # Upgraded from 512mb for vector operations and hybrid search
-  cpu_kind = "performance"  # Upgraded from shared for dedicated CPU resources
-  cpus = 2            # Upgraded from 1 for parallel processing
+# Horizontal autoscaling – spin up to 3 additional stateless machines on demand
+[autoscaler]
+  enabled = true
+  min_count = 0     # Allow scale-to-zero when idle
+  max_count = 3     # Burst up to 3 running machines during load
 
 # Metrics and monitoring
 [metrics]
