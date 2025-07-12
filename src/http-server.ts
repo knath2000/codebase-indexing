@@ -1,12 +1,13 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
-import { setupMcpTools } from './index.js';
+import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
 
 const app = express();
 const port = parseInt(process.env.PORT || '3001', 10);
@@ -35,6 +36,7 @@ app.get('/', (_req: Request, res: Response) => {
 
 // Global MCP server instance
 let mcpServer: Server | null = null;
+let mcpClient: Client | null = null;
 let indexingService: IndexingService | null = null;
 let searchService: SearchService | null = null;
 let servicesInitialized = false;
@@ -44,15 +46,15 @@ const activeSessions = new Map<string, { id: string; startTime: Date; lastHeartb
 
 // Initialize MCP server quickly (without heavy network calls)
 async function initializeMcpServer() {
-  if (mcpServer) return;
-  
+  if (mcpServer && mcpClient) return;
+
   const config = loadConfig();
   validateConfig(config);
-  
+
   // Create services but don't initialize them yet
   indexingService = new IndexingService(config);
   searchService = new SearchService(config);
-  
+
   // Create MCP server
   mcpServer = new Server(
     {
@@ -66,10 +68,31 @@ async function initializeMcpServer() {
     }
   );
 
-  // Setup MCP tools
+  // Setup MCP tools (register handlers on the server)
   setupMcpTools(mcpServer, indexingService, searchService);
-  
-  console.log('MCP server initialized (services will initialize on first use)');
+
+  // Wire up an in-memory transport so we can invoke tool handlers locally via a client instance.
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  // Connect server side of the transport
+  await mcpServer.connect(serverTransport);
+
+  // Create an internal client with minimal capabilities (just tools)
+  mcpClient = new Client(
+    {
+      name: 'http-proxy',
+      version: '1.0.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
+
+  await mcpClient.connect(clientTransport);
+
+  console.log('MCP server and internal client initialized (in-memory transport)');
 }
 
 // Initialize services lazily (on first tool use)
@@ -220,22 +243,20 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
           break;
           
         case 'tools/list':
-          // Get tools from MCP server
-          const toolsResponse = await mcpServer.request(
-            { method: 'tools/list', params: {} },
-            ListToolsRequestSchema
-          );
-          result = toolsResponse;
+          // Return the statically defined tools list
+          result = { tools: TOOL_DEFINITIONS };
           break;
           
         case 'tools/call':
+          if (!mcpClient) {
+            throw new Error('MCP client not initialized');
+          }
+
           // Ensure services are initialized before tool execution
           await ensureServicesInitialized();
-          
-          const toolResponse = await mcpServer.request(
-            { method: 'tools/call', params },
-            CallToolRequestSchema
-          );
+
+          // Forward the tool call through the in-memory client to reuse existing handlers
+          const toolResponse = await mcpClient.callTool(params);
           result = toolResponse;
           break;
 

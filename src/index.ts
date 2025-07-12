@@ -12,211 +12,213 @@ import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 const SERVER_NAME = 'codebase-indexing-server';
 const SERVER_VERSION = '1.0.0';
 
+export const TOOL_DEFINITIONS = [
+  {
+    name: 'index_directory',
+    description: 'Index all files in a directory recursively',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        directory_path: {
+          type: 'string',
+          description: 'Path to the directory to index'
+        }
+      },
+      required: ['directory_path']
+    }
+  },
+  {
+    name: 'index_file',
+    description: 'Index a single file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'Path to the file to index'
+        }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'search_code',
+    description: 'Search for code using semantic similarity',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query'
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language to filter by (optional)'
+        },
+        chunk_type: {
+          type: 'string',
+          description: 'Type of code chunk to search for (function, class, etc.)'
+        },
+        file_path: {
+          type: 'string',
+          description: 'File path to search within (optional)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)'
+        },
+        threshold: {
+          type: 'number',
+          description: 'Minimum similarity threshold (default: 0.7)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'search_functions',
+    description: 'Search for functions by name or description',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Function name or description to search for'
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language to filter by (optional)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'search_classes',
+    description: 'Search for classes by name or description',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Class name or description to search for'
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language to filter by (optional)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'find_similar',
+    description: 'Find code chunks similar to a given chunk',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chunk_id: {
+          type: 'string',
+          description: 'ID of the chunk to find similar chunks for'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)'
+        },
+        threshold: {
+          type: 'number',
+          description: 'Minimum similarity threshold (default: 0.7)'
+        }
+      },
+      required: ['chunk_id']
+    }
+  },
+  {
+    name: 'get_code_context',
+    description: 'Get code context around a specific chunk',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chunk_id: {
+          type: 'string',
+          description: 'ID of the chunk to get context for'
+        },
+        context_lines: {
+          type: 'number',
+          description: 'Number of lines of context to include (default: 5)'
+        }
+      },
+      required: ['chunk_id']
+    }
+  },
+  {
+    name: 'get_indexing_stats',
+    description: 'Get statistics about the indexed codebase',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_search_stats',
+    description: 'Get statistics about the search index',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'clear_index',
+    description: 'Clear the entire search index',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'remove_file',
+    description: 'Remove a file from the search index',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'Path to the file to remove from index'
+        }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'reindex_file',
+    description: 'Re-index a single file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'Path to the file to re-index'
+        }
+      },
+      required: ['file_path']
+    }
+  }
+];
+
 // Export function to setup MCP tools (used by HTTP server)
 export function setupMcpTools(server: Server, indexingService: IndexingService, searchService: SearchService): void {
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-      tools: [
-        {
-          name: 'index_directory',
-          description: 'Index all files in a directory recursively',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              directory_path: {
-                type: 'string',
-                description: 'Path to the directory to index'
-              }
-            },
-            required: ['directory_path']
-          }
-        },
-        {
-          name: 'index_file',
-          description: 'Index a single file',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_path: {
-                type: 'string',
-                description: 'Path to the file to index'
-              }
-            },
-            required: ['file_path']
-          }
-        },
-        {
-          name: 'search_code',
-          description: 'Search for code using semantic similarity',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Search query'
-              },
-              language: {
-                type: 'string',
-                description: 'Programming language to filter by (optional)'
-              },
-              chunk_type: {
-                type: 'string',
-                description: 'Type of code chunk to search for (function, class, etc.)'
-              },
-              file_path: {
-                type: 'string',
-                description: 'File path to search within (optional)'
-              },
-              limit: {
-                type: 'number',
-                description: 'Maximum number of results to return (default: 10)'
-              },
-              threshold: {
-                type: 'number',
-                description: 'Minimum similarity threshold (default: 0.7)'
-              }
-            },
-            required: ['query']
-          }
-        },
-        {
-          name: 'search_functions',
-          description: 'Search for functions by name or description',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Function name or description to search for'
-              },
-              language: {
-                type: 'string',
-                description: 'Programming language to filter by (optional)'
-              },
-              limit: {
-                type: 'number',
-                description: 'Maximum number of results to return (default: 10)'
-              }
-            },
-            required: ['query']
-          }
-        },
-        {
-          name: 'search_classes',
-          description: 'Search for classes by name or description',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Class name or description to search for'
-              },
-              language: {
-                type: 'string',
-                description: 'Programming language to filter by (optional)'
-              },
-              limit: {
-                type: 'number',
-                description: 'Maximum number of results to return (default: 10)'
-              }
-            },
-            required: ['query']
-          }
-        },
-        {
-          name: 'find_similar',
-          description: 'Find code chunks similar to a given chunk',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              chunk_id: {
-                type: 'string',
-                description: 'ID of the chunk to find similar chunks for'
-              },
-              limit: {
-                type: 'number',
-                description: 'Maximum number of results to return (default: 10)'
-              },
-              threshold: {
-                type: 'number',
-                description: 'Minimum similarity threshold (default: 0.7)'
-              }
-            },
-            required: ['chunk_id']
-          }
-        },
-        {
-          name: 'get_code_context',
-          description: 'Get code context around a specific chunk',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              chunk_id: {
-                type: 'string',
-                description: 'ID of the chunk to get context for'
-              },
-              context_lines: {
-                type: 'number',
-                description: 'Number of lines of context to include (default: 5)'
-              }
-            },
-            required: ['chunk_id']
-          }
-        },
-        {
-          name: 'get_indexing_stats',
-          description: 'Get statistics about the indexed codebase',
-          inputSchema: {
-            type: 'object',
-            properties: {}
-          }
-        },
-        {
-          name: 'get_search_stats',
-          description: 'Get statistics about the search index',
-          inputSchema: {
-            type: 'object',
-            properties: {}
-          }
-        },
-        {
-          name: 'clear_index',
-          description: 'Clear the entire search index',
-          inputSchema: {
-            type: 'object',
-            properties: {}
-          }
-        },
-        {
-          name: 'remove_file',
-          description: 'Remove a file from the search index',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_path: {
-                type: 'string',
-                description: 'Path to the file to remove from index'
-              }
-            },
-            required: ['file_path']
-          }
-        },
-        {
-          name: 'reindex_file',
-          description: 'Re-index a file (force update)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              file_path: {
-                type: 'string',
-                description: 'Path to the file to re-index'
-              }
-            },
-            required: ['file_path']
-          }
-        }
-      ]
+      tools: TOOL_DEFINITIONS
     };
   });
 
@@ -417,203 +419,7 @@ class CodebaseIndexingServer {
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
       return {
-        tools: [
-          {
-            name: 'index_directory',
-            description: 'Index all files in a directory recursively',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                directory_path: {
-                  type: 'string',
-                  description: 'Path to the directory to index'
-                }
-              },
-              required: ['directory_path']
-            }
-          },
-          {
-            name: 'index_file',
-            description: 'Index a single file',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                file_path: {
-                  type: 'string',
-                  description: 'Path to the file to index'
-                }
-              },
-              required: ['file_path']
-            }
-          },
-          {
-            name: 'search_code',
-            description: 'Search for code chunks using semantic similarity',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query'
-                },
-                language: {
-                  type: 'string',
-                  description: 'Programming language to filter by (optional)'
-                },
-                chunk_type: {
-                  type: 'string',
-                  enum: ['function', 'class', 'module', 'interface', 'type', 'variable', 'import', 'comment', 'generic'],
-                  description: 'Type of code chunk to search for (optional)'
-                },
-                file_path: {
-                  type: 'string',
-                  description: 'Specific file to search in (optional)'
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of results to return (default: 10)'
-                },
-                threshold: {
-                  type: 'number',
-                  description: 'Minimum similarity threshold (default: 0.7)'
-                }
-              },
-              required: ['query']
-            }
-          },
-          {
-            name: 'search_functions',
-            description: 'Search for functions by name or description',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query for functions'
-                },
-                language: {
-                  type: 'string',
-                  description: 'Programming language to filter by (optional)'
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of results to return (default: 10)'
-                }
-              },
-              required: ['query']
-            }
-          },
-          {
-            name: 'search_classes',
-            description: 'Search for classes by name or description',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                query: {
-                  type: 'string',
-                  description: 'Search query for classes'
-                },
-                language: {
-                  type: 'string',
-                  description: 'Programming language to filter by (optional)'
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of results to return (default: 10)'
-                }
-              },
-              required: ['query']
-            }
-          },
-          {
-            name: 'find_similar',
-            description: 'Find code chunks similar to a given chunk',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                chunk_id: {
-                  type: 'string',
-                  description: 'ID of the chunk to find similar chunks for'
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Maximum number of results to return (default: 5)'
-                }
-              },
-              required: ['chunk_id']
-            }
-          },
-          {
-            name: 'get_code_context',
-            description: 'Get code context around a specific chunk',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                chunk_id: {
-                  type: 'string',
-                  description: 'ID of the chunk to get context for'
-                },
-                context_lines: {
-                  type: 'number',
-                  description: 'Number of context lines to include (default: 5)'
-                }
-              },
-              required: ['chunk_id']
-            }
-          },
-          {
-            name: 'get_indexing_stats',
-            description: 'Get statistics about the indexed codebase',
-            inputSchema: {
-              type: 'object',
-              properties: {}
-            }
-          },
-          {
-            name: 'get_search_stats',
-            description: 'Get statistics about the search index',
-            inputSchema: {
-              type: 'object',
-              properties: {}
-            }
-          },
-          {
-            name: 'clear_index',
-            description: 'Clear the entire search index',
-            inputSchema: {
-              type: 'object',
-              properties: {}
-            }
-          },
-          {
-            name: 'remove_file',
-            description: 'Remove a file from the search index',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                file_path: {
-                  type: 'string',
-                  description: 'Path to the file to remove from index'
-                }
-              },
-              required: ['file_path']
-            }
-          },
-          {
-            name: 'reindex_file',
-            description: 'Re-index a file (force update)',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                file_path: {
-                  type: 'string',
-                  description: 'Path to the file to re-index'
-                }
-              },
-              required: ['file_path']
-            }
-          }
-        ]
+        tools: TOOL_DEFINITIONS
       };
     });
 
