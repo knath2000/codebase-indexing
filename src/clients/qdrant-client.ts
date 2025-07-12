@@ -317,6 +317,81 @@ export class QdrantVectorClient {
   }
 
   /**
+   * Perform a simple keyword-based search across all indexed chunks.
+   * This provides a lightweight BM25-style sparse retrieval fallback that can be
+   * blended with dense semantic search results for higher accuracy – similar to
+   * Cursor's hybrid search pipeline.
+   *
+   * NOTE: This implementation scrolls the entire collection once and performs
+   * in-memory scoring. For typical source-code repositories (a few thousand
+   * chunks) this is fast enough and keeps the implementation dependency-free.
+   * If the collection grows large, consider replacing this with Qdrant's
+   * full-text payload index once it becomes generally available.
+   */
+  async keywordSearch(query: SearchQuery): Promise<SearchResult[]> {
+    const searchText = query.query.toLowerCase();
+    if (!searchText.trim()) {
+      return [];
+    }
+
+    // Collect all chunks (streaming in pages of 1000) – this is OK for <50k chunks
+    const pageLimit = 1000;
+    let offset: string | undefined = undefined;
+    const allPoints: { id: string | number; payload: EmbeddingPayload }[] = [];
+
+    try {
+      do {
+        const page = await this.client.scroll(this.collectionName, {
+          with_payload: true,
+          with_vector: false,
+          limit: pageLimit,
+          offset: offset ?? null
+        });
+
+        page.points.forEach(point => {
+          allPoints.push({ id: point.id as string | number, payload: point.payload as unknown as EmbeddingPayload });
+        });
+        offset = page.next_page_offset as string | undefined;
+      } while (offset !== undefined);
+    } catch (error) {
+      console.error('[Qdrant] keywordSearch scroll failed:', error);
+      return [];
+    }
+
+    // Very naive scoring: term frequency of query tokens in content/snippet
+    const tokens = searchText.split(/\s+/).filter(Boolean);
+    const results: SearchResult[] = [];
+
+    for (const point of allPoints) {
+      const content = point.payload.content.toLowerCase();
+      let score = 0;
+      for (const token of tokens) {
+        // Increment score by occurrences (basic TF)
+        const occurrences = content.split(token).length - 1;
+        score += occurrences;
+      }
+      if (score > 0) {
+        const chunk = this.payloadToCodeChunk(point.payload);
+        chunk.id = String(point.id);
+        results.push({
+          id: String(point.id),
+          score,
+          chunk,
+          snippet: this.createSnippet(point.payload),
+          context: this.createContextDescription(point.payload)
+        });
+      }
+    }
+
+    // Normalize and sort (higher scores first)
+    const maxScore = results.reduce((m, r) => (r.score > m ? r.score : m), 1);
+    results.forEach(r => (r.score = r.score / maxScore));
+    results.sort((a, b) => b.score - a.score);
+
+    return results.slice(0, query.limit || 20);
+  }
+
+  /**
    * Delete embeddings by file path
    */
   async deleteByFilePath(filePath: string): Promise<void> {

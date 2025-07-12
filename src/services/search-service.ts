@@ -127,20 +127,27 @@ export class SearchService {
       const denseResults = await this.qdrantClient.searchSimilar(query, queryVector);
       console.log(`🔍 [SearchService] Found ${denseResults.length} dense results`);
 
+      // Perform sparse keyword search (simple BM25-style)
+      const sparseResults = await this.qdrantClient.keywordSearch({
+        ...query,
+        limit: (query.limit || 20) * 2 // fetch extra candidates for blending
+      });
+      console.log(`🔍 [SearchService] Found ${sparseResults.length} sparse results`);
+
       // Perform hybrid search if enabled
       let finalResults: SearchResult[];
       const enableHybrid = query.enableHybrid ?? this.config.enableHybridSearch;
-      
+
       if (enableHybrid && this.hybridSearch.isEnabled()) {
         this.searchStats.hybridQueries++;
-        
-        // TODO: Implement sparse search (BM25) - for now, use dense-only
-        const hybridResult = await this.hybridSearch.hybridSearch(query, denseResults);
+
+        const hybridResult = await this.hybridSearch.hybridSearch(query, denseResults, sparseResults);
         finalResults = hybridResult.combinedResults;
-        
+
         console.log(`🔀 [SearchService] Hybrid search completed with ${finalResults.length} results`);
       } else {
-        finalResults = denseResults;
+        // If hybrid disabled, fall back to dense, then sparse as secondary
+        finalResults = denseResults.length > 0 ? denseResults : sparseResults;
       }
 
       // Apply metadata boosting
