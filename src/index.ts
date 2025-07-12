@@ -498,10 +498,14 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             enableReranking: args.enable_reranking as boolean
           }, args.max_tokens as number);
           
-          const referencesText = codebaseResult.references.map((ref, index) => 
-            `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
-            `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``
-          ).join('\n\n');
+          const referencesText = codebaseResult.references.map((ref, index) => {
+            // Truncate snippet to prevent memory issues
+            const truncatedSnippet = ref.snippet.length > 150 
+              ? ref.snippet.substring(0, 150) + '...' 
+              : ref.snippet;
+            return `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
+                   `\`\`\`${ref.language || 'text'}\n${truncatedSnippet}\n\`\`\``;
+          }).join('\n\n');
           
           return {
             content: [{
@@ -742,10 +746,13 @@ class CodebaseIndexingServer {
         {
           type: 'text',
           text: `Search results for "${query}":\n\n` +
-                results.map((result, index) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
+                results.map((result, index) => {
+                  const truncatedSnippet = result.snippet.length > 150 
+                    ? result.snippet.substring(0, 150) + '...' 
+                    : result.snippet;
+                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
+                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
+                }).join('\n\n')
         }
       ]
     };
@@ -760,11 +767,14 @@ class CodebaseIndexingServer {
         {
           type: 'text',
           text: `Function search results for "${query}":\n\n` +
-                results.map((result, index) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
-                  `   ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
+                results.map((result, index) => {
+                  const truncatedSnippet = result.snippet.length > 150 
+                    ? result.snippet.substring(0, 150) + '...' 
+                    : result.snippet;
+                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
+                         `   ${result.context}\n` +
+                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
+                }).join('\n\n')
         }
       ]
     };
@@ -779,11 +789,14 @@ class CodebaseIndexingServer {
         {
           type: 'text',
           text: `Class search results for "${query}":\n\n` +
-                results.map((result, index) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
-                  `   ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
+                results.map((result, index) => {
+                  const truncatedSnippet = result.snippet.length > 150 
+                    ? result.snippet.substring(0, 150) + '...' 
+                    : result.snippet;
+                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
+                         `   ${result.context}\n` +
+                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
+                }).join('\n\n')
         }
       ]
     };
@@ -798,10 +811,13 @@ class CodebaseIndexingServer {
         {
           type: 'text',
           text: `Similar chunks to "${chunk_id}":\n\n` +
-                results.map((result, index) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
+                results.map((result, index) => {
+                  const truncatedSnippet = result.snippet.length > 150 
+                    ? result.snippet.substring(0, 150) + '...' 
+                    : result.snippet;
+                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
+                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
+                }).join('\n\n')
         }
       ]
     };
@@ -977,10 +993,14 @@ class CodebaseIndexingServer {
       enableReranking: args.enable_reranking as boolean
     }, args.max_tokens as number);
     
-    const referencesText = codebaseResult.references.map((ref, index) => 
-      `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
-      `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``
-    ).join('\n\n');
+    const referencesText = codebaseResult.references.map((ref, index) => {
+      // Truncate snippet to prevent memory issues
+      const truncatedSnippet = ref.snippet.length > 150 
+        ? ref.snippet.substring(0, 150) + '...' 
+        : ref.snippet;
+      return `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
+             `\`\`\`${ref.language || 'text'}\n${truncatedSnippet}\n\`\`\``;
+    }).join('\n\n');
     
     return {
       content: [
