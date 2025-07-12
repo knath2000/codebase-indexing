@@ -27,6 +27,12 @@ RUN npm run build
 # Rebuild tree-sitter language grammars for the current platform
 RUN npm rebuild tree-sitter tree-sitter-javascript tree-sitter-python tree-sitter-typescript
 
+# Verify tree-sitter packages are properly installed
+RUN node -e "console.log('Testing tree-sitter imports...'); \
+  import('tree-sitter-javascript').then(m => console.log('JS:', Object.keys(m))).catch(e => console.error('JS error:', e)); \
+  import('tree-sitter-typescript').then(m => console.log('TS:', Object.keys(m))).catch(e => console.error('TS error:', e)); \
+  import('tree-sitter-python').then(m => console.log('PY:', Object.keys(m))).catch(e => console.error('PY error:', e));" || true
+
 # Remove dev dependencies to reduce image size, but keep build tools for tree-sitter
 RUN npm prune --omit=dev --legacy-peer-deps
 

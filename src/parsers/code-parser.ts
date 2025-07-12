@@ -14,18 +14,90 @@ import {
 const loadLanguage = async (language: string): Promise<any> => {
   try {
     switch (language) {
-      case 'javascript':
+      case 'javascript': {
         const jsModule = await import('tree-sitter-javascript');
-        return jsModule.default;
-      case 'typescript':
+        console.log(`JavaScript module loaded:`, { 
+          hasDefault: !!jsModule.default, 
+          keys: Object.keys(jsModule),
+          defaultType: typeof jsModule.default 
+        });
+        
+        // Try different export patterns
+        let grammar = jsModule.default;
+        if (!grammar && typeof jsModule === 'function') {
+          grammar = jsModule;
+        }
+        if (!grammar && (jsModule as any).javascript) {
+          grammar = (jsModule as any).javascript;
+        }
+        
+        if (!grammar) {
+          throw new Error('JavaScript grammar not found in module');
+        }
+        return grammar;
+      }
+      case 'typescript': {
         const tsModule = await import('tree-sitter-typescript');
-        return tsModule.typescript;
-      case 'tsx':
+        console.log(`TypeScript module loaded:`, { 
+          hasTypescript: !!tsModule.typescript, 
+          hasTsx: !!tsModule.tsx,
+          keys: Object.keys(tsModule),
+          typescriptType: typeof tsModule.typescript 
+        });
+        
+        // Try different export patterns
+        let grammar = tsModule.typescript;
+        if (!grammar && tsModule.default && tsModule.default.typescript) {
+          grammar = tsModule.default.typescript;
+        }
+        
+        if (!grammar) {
+          throw new Error('TypeScript grammar not found in module');
+        }
+        return grammar;
+      }
+      case 'tsx': {
         const tsxModule = await import('tree-sitter-typescript');
-        return tsxModule.tsx;
-      case 'python':
+        console.log(`TSX module loaded:`, { 
+          hasTypescript: !!tsxModule.typescript, 
+          hasTsx: !!tsxModule.tsx,
+          keys: Object.keys(tsxModule),
+          tsxType: typeof tsxModule.tsx 
+        });
+        
+        // Try different export patterns
+        let grammar = tsxModule.tsx;
+        if (!grammar && tsxModule.default && tsxModule.default.tsx) {
+          grammar = tsxModule.default.tsx;
+        }
+        
+        if (!grammar) {
+          throw new Error('TSX grammar not found in module');
+        }
+        return grammar;
+      }
+      case 'python': {
         const pyModule = await import('tree-sitter-python');
-        return pyModule.default;
+        console.log(`Python module loaded:`, { 
+          hasDefault: !!pyModule.default, 
+          keys: Object.keys(pyModule),
+          defaultType: typeof pyModule.default 
+        });
+        
+        // Try different export patterns
+        let grammar = pyModule.default;
+        if (!grammar && typeof pyModule === 'function') {
+          grammar = pyModule;
+        }
+        if (!grammar && (pyModule as any).python) {
+          grammar = (pyModule as any).python;
+        }
+        
+        if (!grammar) {
+          throw new Error('Python grammar not found in module');
+        }
+        return grammar;
+      }
       default:
         throw new Error(`Language parser not available for: ${language}`);
     }
