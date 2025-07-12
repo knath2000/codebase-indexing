@@ -370,15 +370,20 @@ export class CodeParser {
   }
 
   /**
-   * Generate unique chunk ID
+   * Generate unique chunk ID compatible with Qdrant (UUID format)
    */
   private generateChunkId(filePath: string, startLine: number, endLine: number, chunkType: ChunkType): string {
-    const hash = this.simpleHash(`${filePath}:${startLine}:${endLine}:${chunkType}`);
-    return `${chunkType}_${hash}`;
+    // Create a deterministic UUID based on the chunk data
+    const input = `${filePath}:${startLine}:${endLine}:${chunkType}`;
+    const hash = this.simpleHash(input);
+    
+    // Convert hash to UUID format (8-4-4-4-12 hex digits)
+    const hex = hash.padStart(32, '0').substring(0, 32);
+    return `${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20, 32)}`;
   }
 
   /**
-   * Simple hash function for generating IDs
+   * Enhanced hash function that produces hex output suitable for UUID generation
    */
   private simpleHash(str: string): string {
     let hash = 0;
@@ -387,7 +392,22 @@ export class CodeParser {
       hash = ((hash << 5) - hash) + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
-    return Math.abs(hash).toString(36);
+    // Convert to positive hex and pad to ensure we have enough digits
+    const hashStr = Math.abs(hash).toString(16);
+    // Create a longer hex string by repeating and hashing if needed
+    let result = hashStr;
+    while (result.length < 32) {
+      // Add more entropy by hashing the current result with original string
+      let newHash = 0;
+      const combined = result + str;
+      for (let i = 0; i < combined.length; i++) {
+        const char = combined.charCodeAt(i);
+        newHash = ((newHash << 5) - newHash) + char;
+        newHash = newHash & newHash;
+      }
+      result += Math.abs(newHash).toString(16);
+    }
+    return result;
   }
 
   /**
