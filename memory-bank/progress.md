@@ -47,30 +47,34 @@
 
 ## 🚧 In Progress (Current Session)
 
-### Documentation & Knowledge Management
-- [x] **Memory Bank Creation**: All core files created (projectbrief, productContext, systemPatterns, techContext, activeContext, progress)
-- [ ] **README Enhancement**: Update with customization guides and troubleshooting
-- [ ] **Knowledge Consolidation**: Document lessons learned in continuous improvement protocol
+### Research & Gap Analysis
+- [x] **Cursor Architecture Research**: Used Perplexity MCP to analyze Cursor's codebase indexing system
+- [x] **Feature Gap Identification**: Identified 7 key areas needing enhancement for Cursor parity  
+- [x] **Technical Roadmap Creation**: Prioritized implementation plan for AST chunking, hybrid retrieval, LLM re-ranking
+- [x] **Memory Bank Updates**: Documented research findings and architectural insights
+- [x] **Knowledge Preservation**: Captured research methodology and technical patterns
 
 ## 📋 Planned Features (Short-term)
 
-### Observability & Monitoring
-- [ ] **Usage Analytics**: Optional telemetry for tool usage patterns
-- [ ] **Performance Metrics**: Response time and throughput monitoring
-- [ ] **Error Tracking**: Structured error logging and alerting
-- [ ] **Resource Monitoring**: Memory and CPU usage tracking
+### Core Cursor Parity Features
+- [ ] **AST-Based Chunking**: Tree-sitter semantic parsing for functions/classes vs. fixed-size blocks
+- [ ] **Multi-Vector Storage**: Dense + sparse BM25 vectors in Qdrant collections  
+- [ ] **Hybrid Retrieval**: Combine dense semantic + sparse keyword search with score blending
+- [ ] **LLM Re-ranking**: Secondary LLM stage for relevance scoring before UI presentation
+- [ ] **Code Reference Format**: Implement Cursor's JSON schema with `path`, `lines`, `snippet`
 
-### Performance Optimization
-- [ ] **Embedding Caching**: Cache frequently accessed embeddings
-- [ ] **Connection Pooling**: Optimize external service connections
-- [ ] **Memory Management**: Improved garbage collection and memory usage
-- [ ] **Batch Size Optimization**: Dynamic batch sizing based on performance
+### Operational Excellence  
+- [ ] **Health Endpoints**: `/healthz` and `/stats` for monitoring and telemetry
+- [ ] **Context Budget Management**: Token counting with smart truncation for model limits
+- [ ] **Search Caching**: Memoize identical queries for performance optimization
+- [ ] **File-watch Batching**: Debounced incremental updates to avoid indexing thrashing
+- [ ] **Graceful Fallbacks**: Local model fallback when embedding service is down
 
-### Enhanced Search Features
-- [ ] **Advanced Filters**: Code complexity, recency, author filters
-- [ ] **Search History**: Track and optimize common queries
-- [ ] **Ranking Improvements**: Better relevance scoring algorithms
-- [ ] **Multi-query Support**: Handle complex multi-part searches
+### Advanced Search Features
+- [ ] **Metadata Priors**: Boost results from recently opened/edited files
+- [ ] **Chunk Grouping**: Merge consecutive hits in same file for better UX
+- [ ] **Automatic Follow-ups**: Silent re-querying with refined prompts during conversation
+- [ ] **Versioned APIs**: `mcpSchemaVersion` for independent client migration
 
 ## 🔮 Future Roadmap (Long-term)
 
@@ -120,6 +124,12 @@
 
 ## 📊 Key Metrics & Achievements
 
+### Research & Analysis Achievements
+- **Architecture Analysis**: Comprehensive research into Cursor's codebase indexing using Perplexity MCP
+- **Gap Identification**: 7 key enhancement areas identified across ingestion, storage, query, and integration layers
+- **Technical Roadmap**: Detailed implementation plan created with specific patterns and priorities
+- **Knowledge Capture**: Research methodology and findings documented for future reference
+
 ### Reliability Metrics
 - **Uptime**: 99.9% since deployment (estimated)
 - **Connection Success**: 100% after fixes (previously 0%)
@@ -137,6 +147,7 @@
 - **Recovery Time**: <5 minutes for rollbacks
 - **Bug Fix Time**: Issues resolved within 1-2 commits
 - **Feature Development**: Major features completed in 1-3 days
+- **Research Efficiency**: Complete architecture analysis completed in single session using MCP tools
 
 ## 🎯 Success Criteria Status
 

@@ -1,17 +1,36 @@
 import { VoyageClient } from '../clients/voyage-client.js';
 import { QdrantVectorClient } from '../clients/qdrant-client.js';
+import { LLMRerankerService } from './llm-reranker.js';
+import { HybridSearchService } from './hybrid-search.js';
+import { ContextManagerService } from './context-manager.js';
+import { SearchCacheService } from './search-cache.js';
 import {
   Config,
   SearchQuery,
   SearchResult,
   ChunkType,
-  CodeChunk
+  CodeChunk,
+  CodeReference,
+  HybridSearchResult,
+  LLMRerankerRequest,
+  SearchStats
 } from '../types.js';
 
 export class SearchService {
   private voyageClient: VoyageClient;
   private qdrantClient: QdrantVectorClient;
   private config: Config;
+  private llmReranker: LLMRerankerService;
+  private hybridSearch: HybridSearchService;
+  private contextManager: ContextManagerService;
+  private searchCache: SearchCacheService;
+  private searchStats: {
+    totalQueries: number;
+    cacheHits: number;
+    hybridQueries: number;
+    rerankedQueries: number;
+    lastQuery: Date | null;
+  };
 
   constructor(config: Config) {
     this.config = config;
@@ -22,6 +41,21 @@ export class SearchService {
       config.collectionName,
       this.voyageClient.getEmbeddingDimension(config.embeddingModel)
     );
+    
+    // Initialize enhanced services
+    this.llmReranker = new LLMRerankerService(config);
+    this.hybridSearch = new HybridSearchService(config);
+    this.contextManager = new ContextManagerService(config);
+    this.searchCache = new SearchCacheService(config);
+    
+    // Initialize search statistics
+    this.searchStats = {
+      totalQueries: 0,
+      cacheHits: 0,
+      hybridQueries: 0,
+      rerankedQueries: 0,
+      lastQuery: null
+    };
   }
 
   /**
@@ -47,22 +81,36 @@ export class SearchService {
   }
 
   /**
-   * Search for code chunks using semantic similarity (enhanced for Cursor-like @codebase functionality)
+   * Enhanced search with caching, hybrid retrieval, and LLM re-ranking (Cursor-style @codebase functionality)
    */
   async search(query: SearchQuery): Promise<SearchResult[]> {
-    console.log(`🔍 [SearchService] Starting search for: "${query.query}"`);
+    console.log(`🔍 [SearchService] Starting enhanced search for: "${query.query}"`);
     console.log(`🔍 [SearchService] Search options:`, {
       language: query.language,
       chunkType: query.chunkType,
       filePath: query.filePath,
       limit: query.limit || 10,
-      threshold: query.threshold || 0.7
+      threshold: query.threshold || 0.7,
+      enableHybrid: query.enableHybrid ?? this.config.enableHybridSearch,
+      enableReranking: query.enableReranking ?? this.config.enableLLMReranking
     });
+
+    // Update statistics
+    this.searchStats.totalQueries++;
+    this.searchStats.lastQuery = new Date();
 
     try {
       // Validate query
       if (!query.query || query.query.trim().length === 0) {
         throw new Error('Search query cannot be empty');
+      }
+
+      // Check cache first
+      const cachedResults = this.searchCache.get(query);
+      if (cachedResults) {
+        this.searchStats.cacheHits++;
+        console.log(`🎯 [SearchService] Returning ${cachedResults.length} cached results`);
+        return cachedResults;
       }
 
       // Generate embedding for the query using Voyage AI's code-optimized model
@@ -75,19 +123,68 @@ export class SearchService {
 
       console.log(`✅ [SearchService] Generated embedding vector of length ${queryVector.length}`);
 
-      // Search for similar vectors in Qdrant
-      const results = await this.qdrantClient.searchSimilar(query, queryVector);
+      // Perform dense semantic search
+      const denseResults = await this.qdrantClient.searchSimilar(query, queryVector);
+      console.log(`🔍 [SearchService] Found ${denseResults.length} dense results`);
 
-      console.log(`🔍 [SearchService] Found ${results.length} raw results`);
+      // Perform hybrid search if enabled
+      let finalResults: SearchResult[];
+      const enableHybrid = query.enableHybrid ?? this.config.enableHybridSearch;
+      
+      if (enableHybrid && this.hybridSearch.isEnabled()) {
+        this.searchStats.hybridQueries++;
+        
+        // TODO: Implement sparse search (BM25) - for now, use dense-only
+        const hybridResult = await this.hybridSearch.hybridSearch(query, denseResults);
+        finalResults = hybridResult.combinedResults;
+        
+        console.log(`🔀 [SearchService] Hybrid search completed with ${finalResults.length} results`);
+      } else {
+        finalResults = denseResults;
+      }
+
+      // Apply metadata boosting
+      finalResults = this.contextManager.boostResultsByMetadata(finalResults);
+
+      // Optimize results for context
+      finalResults = this.contextManager.optimizeForContext(finalResults, query.query, {
+        preferFunctions: query.chunkType === ChunkType.FUNCTION,
+        preferClasses: query.chunkType === ChunkType.CLASS,
+        maxFilesPerType: 3,
+        diversifyLanguages: !query.language
+      });
+
+      // Apply LLM re-ranking if enabled
+      const enableReranking = query.enableReranking ?? this.config.enableLLMReranking;
+      
+      if (enableReranking && this.llmReranker.isEnabled() && finalResults.length > 1) {
+        this.searchStats.rerankedQueries++;
+        
+        const rerankerRequest: LLMRerankerRequest = {
+          query: query.query,
+          candidates: finalResults.slice(0, 20), // Limit candidates for re-ranking
+          maxResults: query.limit || 10
+        };
+        
+        const rerankerResponse = await this.llmReranker.rerank(rerankerRequest);
+        finalResults = rerankerResponse.rerankedResults;
+        
+        console.log(`🧠 [SearchService] LLM re-ranking completed with ${finalResults.length} results`);
+      }
 
       // Post-process and enhance results
-      const processedResults = this.postProcessResults(results, query);
+      const processedResults = this.postProcessResults(finalResults, query);
       
-      console.log(`✅ [SearchService] Returning ${processedResults.length} processed results`);
+      // Cache results if appropriate
+      if (this.searchCache.shouldCache(query, processedResults)) {
+        this.searchCache.set(query, processedResults);
+      }
+      
+      console.log(`✅ [SearchService] Returning ${processedResults.length} enhanced results`);
       return processedResults;
 
     } catch (error) {
-      console.error(`❌ [SearchService] Search failed:`, error);
+      console.error(`❌ [SearchService] Enhanced search failed:`, error);
       if (error instanceof Error) {
         throw new Error(`SearchService failed: ${error.message}`);
       }
@@ -508,5 +605,132 @@ export class SearchService {
     }
     
     return parts.join(' | ');
+  }
+
+  /**
+   * Search and return Cursor-style code references with token budgeting
+   */
+  async searchForCodeReferences(
+    query: SearchQuery,
+    maxTokens?: number
+  ): Promise<{
+    references: CodeReference[];
+    truncated: boolean;
+    summary?: string;
+    metadata: {
+      totalResults: number;
+      searchTime: number;
+      cacheHit: boolean;
+      hybridUsed: boolean;
+      reranked: boolean;
+    };
+  }> {
+    const startTime = Date.now();
+    const originalLimit = query.limit;
+    
+    // Increase limit for better context selection
+    const enhancedQuery = {
+      ...query,
+      limit: Math.max(query.limit || 10, 20)
+    };
+    
+    // Check if this will be a cache hit
+    const willHitCache = !!this.searchCache.get(query);
+    
+    // Perform search
+    const results = await this.search(enhancedQuery);
+    
+    // Convert to code references with token budgeting
+    const { references, contextWindow, truncated } = this.contextManager.formatAsCodeReferences(
+      results,
+      maxTokens
+    );
+    
+    const searchTime = Date.now() - startTime;
+    
+    return {
+      references,
+      truncated,
+      ...(contextWindow.summary && { summary: contextWindow.summary }),
+      metadata: {
+        totalResults: results.length,
+        searchTime,
+        cacheHit: willHitCache,
+        hybridUsed: (enhancedQuery.enableHybrid ?? this.config.enableHybridSearch) && this.hybridSearch.isEnabled(),
+        reranked: (enhancedQuery.enableReranking ?? this.config.enableLLMReranking) && this.llmReranker.isEnabled()
+      }
+    };
+  }
+
+  /**
+   * Invalidate cache for a specific file (called when file is modified)
+   */
+  invalidateFileCache(filePath: string): void {
+    this.searchCache.invalidateFile(filePath);
+  }
+
+  /**
+   * Get enhanced search statistics including all services
+   */
+  getEnhancedSearchStats(): SearchStats {
+    const cacheStats = this.searchCache.getStats();
+    const hybridStats = this.hybridSearch.getStats();
+    const rerankerStats = this.llmReranker.getStats();
+    
+    return {
+      totalQueries: this.searchStats.totalQueries,
+      averageLatency: 0, // TODO: Implement latency tracking
+      cacheHitRate: cacheStats.hitRate,
+      hybridSearchUsage: this.searchStats.hybridQueries,
+      llmRerankerUsage: this.searchStats.rerankedQueries,
+      topLanguages: {}, // TODO: Implement language tracking
+      topChunkTypes: {}, // TODO: Implement chunk type tracking
+      errorRate: 0, // TODO: Implement error tracking
+      lastQuery: this.searchStats.lastQuery || new Date()
+    };
+  }
+
+  /**
+   * Get detailed service status for health monitoring
+   */
+  getServiceStatus(): {
+    searchService: { enabled: boolean; stats: any };
+    llmReranker: { enabled: boolean; stats: any };
+    hybridSearch: { enabled: boolean; stats: any };
+    searchCache: { enabled: boolean; stats: any };
+  } {
+    return {
+      searchService: {
+        enabled: true,
+        stats: this.searchStats
+      },
+      llmReranker: {
+        enabled: this.llmReranker.isEnabled(),
+        stats: this.llmReranker.getStats()
+      },
+      hybridSearch: {
+        enabled: this.hybridSearch.isEnabled(),
+        stats: this.hybridSearch.getStats()
+      },
+      searchCache: {
+        enabled: true,
+        stats: this.searchCache.getStats()
+      }
+    };
+  }
+
+  /**
+   * Clear all caches and reset statistics
+   */
+  clearCaches(): void {
+    this.searchCache.clear();
+    this.searchStats = {
+      totalQueries: 0,
+      cacheHits: 0,
+      hybridQueries: 0,
+      rerankedQueries: 0,
+      lastQuery: null
+    };
+    console.log('🧹 [SearchService] Cleared all caches and reset statistics');
   }
 } 

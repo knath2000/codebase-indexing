@@ -32,12 +32,23 @@ export const ConfigSchema = z.object({
     '.rb', '.swift', '.kt', '.scala',
     '.md', '.txt', '.json', '.yaml', '.yml',
     '.html', '.css', '.scss', '.less'
-  ])
+  ]),
+  // New configuration options for Cursor parity
+  enableHybridSearch: z.boolean().default(true),
+  enableLLMReranking: z.boolean().default(true),
+  llmRerankerModel: z.string().default('claude-3-haiku-20240307'),
+  llmRerankerApiKey: z.string().optional(),
+  searchCacheTTL: z.number().default(300), // 5 minutes
+  contextWindowSize: z.number().default(32000), // tokens
+  maxContextChunks: z.number().default(20),
+  hybridSearchAlpha: z.number().default(0.7), // weight for dense vs sparse
+  fileWatchDebounceMs: z.number().default(1000),
+  mcpSchemaVersion: z.string().default('2024-11-05')
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-// Code chunk types
+// Code chunk types with enhanced metadata
 export interface CodeChunk {
   id: string;
   content: string;
@@ -50,6 +61,13 @@ export interface CodeChunk {
   className?: string | undefined;
   moduleName?: string | undefined;
   metadata: ChunkMetadata;
+  // New fields for Cursor parity
+  contentHash: string; // for incremental updates
+  astNodeType?: string;
+  parentChunkId?: string;
+  childChunkIds?: string[];
+  complexity?: number;
+  tokenCount?: number;
 }
 
 export enum ChunkType {
@@ -61,7 +79,14 @@ export enum ChunkType {
   VARIABLE = 'variable',
   IMPORT = 'import',
   COMMENT = 'comment',
-  GENERIC = 'generic'
+  GENERIC = 'generic',
+  // New chunk types for better AST coverage
+  METHOD = 'method',
+  PROPERTY = 'property',
+  CONSTRUCTOR = 'constructor',
+  ENUM = 'enum',
+  NAMESPACE = 'namespace',
+  DECORATOR = 'decorator'
 }
 
 export interface ChunkMetadata {
@@ -75,9 +100,26 @@ export interface ChunkMetadata {
   dependencies?: string[];
   exports?: string[];
   imports?: string[];
+  // New metadata for enhanced search
+  isRecentlyModified?: boolean;
+  isCurrentlyOpen?: boolean;
+  editDistance?: number;
+  semanticParent?: string;
 }
 
-// Embedding types
+// Multi-vector embedding types
+export interface MultiVectorEmbedding {
+  id: string;
+  denseVector: number[];
+  sparseVector?: SparseVector;
+  payload: EmbeddingPayload;
+}
+
+export interface SparseVector {
+  indices: number[];
+  values: number[];
+}
+
 export interface EmbeddingVector {
   id: string;
   vector: number[];
@@ -95,10 +137,14 @@ export interface EmbeddingPayload {
   className?: string | undefined;
   moduleName?: string | undefined;
   metadata: ChunkMetadata;
+  // New payload fields
+  contentHash: string;
+  tokenCount: number;
+  astNodeType?: string;
   [key: string]: unknown;
 }
 
-// Search types
+// Enhanced search types
 export interface SearchQuery {
   query: string;
   language?: string | undefined;
@@ -107,6 +153,29 @@ export interface SearchQuery {
   limit?: number | undefined;
   threshold?: number | undefined;
   includeMetadata?: boolean | undefined;
+  // New search options
+  enableHybrid?: boolean;
+  enableReranking?: boolean;
+  contextBudget?: number; // max tokens to return
+  boostRecentFiles?: boolean;
+  boostOpenFiles?: boolean;
+}
+
+// Cursor-style code reference format
+export interface CodeReference {
+  type: 'code_reference';
+  path: string;
+  lines: [number, number]; // [startLine, endLine]
+  snippet: string;
+  score?: number;
+  chunkType?: ChunkType;
+  language?: string;
+  metadata?: {
+    functionName?: string;
+    className?: string;
+    complexity?: number;
+    isTest?: boolean;
+  };
 }
 
 export interface SearchResult {
@@ -115,6 +184,35 @@ export interface SearchResult {
   chunk: CodeChunk;
   snippet: string;
   context?: string | undefined;
+  // New fields for enhanced results
+  rerankedScore?: number;
+  hybridScore?: {
+    dense: number;
+    sparse?: number;
+    combined: number;
+  };
+  codeReference?: CodeReference;
+}
+
+// Hybrid search result types
+export interface HybridSearchResult {
+  denseResults: SearchResult[];
+  sparseResults?: SearchResult[];
+  combinedResults: SearchResult[];
+  alpha: number; // blending weight used
+}
+
+// LLM re-ranking types
+export interface LLMRerankerRequest {
+  query: string;
+  candidates: SearchResult[];
+  maxResults: number;
+}
+
+export interface LLMRerankerResponse {
+  rerankedResults: SearchResult[];
+  reasoning?: string;
+  confidence?: number;
 }
 
 // Indexing types
@@ -128,6 +226,10 @@ export interface IndexingProgress {
   startTime: Date;
   estimatedTimeRemaining?: number;
   errors: IndexingError[];
+  // New progress tracking
+  incrementalUpdates: number;
+  skippedFiles: number;
+  cacheHits: number;
 }
 
 export enum IndexingStatus {
@@ -137,7 +239,10 @@ export enum IndexingStatus {
   EMBEDDING = 'embedding',
   STORING = 'storing',
   COMPLETED = 'completed',
-  ERROR = 'error'
+  ERROR = 'error',
+  // New statuses
+  WATCHING = 'watching',
+  INCREMENTAL_UPDATE = 'incremental_update'
 }
 
 export interface IndexingError {
@@ -147,7 +252,7 @@ export interface IndexingError {
   severity: 'warning' | 'error' | 'critical';
 }
 
-// Parser types
+// Enhanced parser types
 export interface ParsedNode {
   type: string;
   startPosition: Position;
@@ -156,6 +261,13 @@ export interface ParsedNode {
   children?: ParsedNode[];
   name?: string;
   kind?: string;
+  // New AST node properties
+  nodeId?: string;
+  parentId?: string;
+  depth: number;
+  isExported?: boolean;
+  isAsync?: boolean;
+  visibility?: 'public' | 'private' | 'protected';
 }
 
 export interface Position {
@@ -171,6 +283,10 @@ export interface LanguageConfig {
   chunkStrategies: ChunkStrategy[];
   keywords: string[];
   commentPatterns: string[];
+  // Enhanced language configuration
+  astNodeMappings: Record<string, ChunkType>;
+  contextualChunking: boolean;
+  supportsSparseSearch: boolean;
 }
 
 export interface ChunkStrategy {
@@ -180,9 +296,14 @@ export interface ChunkStrategy {
   includeContext?: boolean;
   minSize?: number;
   maxSize?: number;
+  // New strategy options
+  preserveHierarchy?: boolean;
+  includeSignature?: boolean;
+  includeDocstring?: boolean;
+  priority?: number;
 }
 
-// Statistics
+// Enhanced statistics
 export interface IndexStats {
   totalFiles: number;
   totalChunks: number;
@@ -195,6 +316,85 @@ export interface IndexStats {
   largestFile: string;
   errors: number;
   warnings: number;
+  // New statistics
+  incrementalUpdates: number;
+  cacheHitRate: number;
+  averageComplexity: number;
+  tokensIndexed: number;
+  memoryUsage: number;
+  searchQueriesServed: number;
+  averageSearchLatency: number;
+}
+
+// Search statistics
+export interface SearchStats {
+  totalQueries: number;
+  averageLatency: number;
+  cacheHitRate: number;
+  hybridSearchUsage: number;
+  llmRerankerUsage: number;
+  topLanguages: Record<string, number>;
+  topChunkTypes: Record<string, number>;
+  errorRate: number;
+  lastQuery: Date;
+}
+
+// Health check types
+export interface HealthStatus {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  timestamp: Date;
+  services: {
+    qdrant: ServiceHealth;
+    voyage: ServiceHealth;
+    llmReranker?: ServiceHealth;
+    fileWatcher: ServiceHealth;
+  };
+  metrics: {
+    uptime: number;
+    memoryUsage: number;
+    cpuUsage?: number;
+    diskUsage?: number;
+  };
+  version: string;
+  mcpSchemaVersion: string;
+}
+
+export interface ServiceHealth {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  latency?: number;
+  errorRate?: number;
+  lastCheck: Date;
+  message?: string;
+}
+
+// Cache types
+export interface SearchCache {
+  query: string;
+  queryHash: string;
+  results: SearchResult[];
+  timestamp: Date;
+  ttl: number;
+  metadata: {
+    language?: string;
+    chunkType?: ChunkType;
+    filePath?: string;
+  };
+}
+
+// File watching types
+export interface FileChangeEvent {
+  type: 'created' | 'modified' | 'deleted' | 'renamed';
+  path: string;
+  timestamp: Date;
+  size?: number;
+  hash?: string;
+}
+
+export interface FileWatchBatch {
+  events: FileChangeEvent[];
+  batchId: string;
+  timestamp: Date;
+  processed: boolean;
 }
 
 // MCP Tool types
@@ -204,7 +404,6 @@ export interface McpTool {
   inputSchema: any;
 }
 
-// Voyage AI API types
 export interface VoyageEmbeddingResponse {
   object: string;
   data: Array<{
@@ -224,4 +423,20 @@ export interface VoyageEmbeddingRequest {
   input_type?: 'query' | 'document';
   truncation?: boolean;
   output_dimension?: number;  // Support for custom embedding dimensions
+} 
+
+// Context management types
+export interface ContextWindow {
+  maxTokens: number;
+  usedTokens: number;
+  chunks: CodeReference[];
+  truncated: boolean;
+  summary?: string;
+}
+
+export interface TokenBudget {
+  total: number;
+  reserved: number; // for system prompts, etc.
+  available: number;
+  used: number;
 } 

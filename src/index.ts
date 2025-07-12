@@ -226,6 +226,86 @@ export const TOOL_DEFINITIONS = [
       },
       required: []
     }
+  },
+  {
+    name: 'search_codebase',
+    description: 'Enhanced codebase search with Cursor-style code references, hybrid retrieval, and LLM re-ranking',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query for codebase'
+        },
+        language: {
+          type: 'string',
+          description: 'Programming language to filter by (optional)'
+        },
+        chunk_type: {
+          type: 'string',
+          description: 'Type of code chunk to search for (function, class, etc.)'
+        },
+        file_path: {
+          type: 'string',
+          description: 'File path to search within (optional)'
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 10)'
+        },
+        max_tokens: {
+          type: 'number',
+          description: 'Maximum tokens for context window (optional)'
+        },
+        enable_hybrid: {
+          type: 'boolean',
+          description: 'Enable hybrid search (dense + sparse)'
+        },
+        enable_reranking: {
+          type: 'boolean',
+          description: 'Enable LLM re-ranking of results'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'get_health_status',
+    description: 'Get comprehensive health status of all services',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'get_enhanced_stats',
+    description: 'Get enhanced statistics including search cache, hybrid search, and LLM re-ranking metrics',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'clear_search_cache',
+    description: 'Clear search cache and reset statistics',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'invalidate_file_cache',
+    description: 'Invalidate cache entries for a specific file (useful when file is modified)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: 'Path to the file to invalidate from cache'
+        }
+      },
+      required: ['file_path']
+    }
   }
 ];
 
@@ -407,6 +487,83 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                     '🔍 Your collection is now ready for @codebase-style filtered searches!'
             }]
           };
+        case 'search_codebase':
+          const codebaseResult = await searchService.searchForCodeReferences({
+            query: args.query as string,
+            language: args.language as string,
+            chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
+            filePath: args.file_path as string,
+            limit: args.limit as number,
+            enableHybrid: args.enable_hybrid as boolean,
+            enableReranking: args.enable_reranking as boolean
+          }, args.max_tokens as number);
+          
+          const referencesText = codebaseResult.references.map((ref, index) => 
+            `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
+            `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``
+          ).join('\n\n');
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `🔍 **Enhanced Codebase Search Results** for "${args.query}"\n\n` +
+                    `📊 **Search Metadata:**\n` +
+                    `- Total results: ${codebaseResult.metadata.totalResults}\n` +
+                    `- Search time: ${codebaseResult.metadata.searchTime}ms\n` +
+                    `- Cache hit: ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
+                    `- Hybrid search: ${codebaseResult.metadata.hybridUsed ? '✅' : '❌'}\n` +
+                    `- LLM re-ranked: ${codebaseResult.metadata.reranked ? '✅' : '❌'}\n` +
+                    `- Truncated: ${codebaseResult.truncated ? '⚠️ Yes' : '✅ No'}\n` +
+                    (codebaseResult.summary ? `- Summary: ${codebaseResult.summary}\n` : '') +
+                    `\n📝 **Code References:**\n\n${referencesText}`
+            }]
+          };
+        case 'get_health_status':
+          // TODO: Implement health monitoring service
+          return {
+            content: [{
+              type: 'text',
+              text: '🏥 **System Health Status**\n\n' +
+                    '✅ Search Service: Operational\n' +
+                    '✅ Indexing Service: Operational\n' +
+                    '⚠️ Health monitoring service not yet implemented'
+            }]
+          };
+        case 'get_enhanced_stats':
+          const enhancedStats = searchService.getEnhancedSearchStats();
+          const serviceStatus = searchService.getServiceStatus();
+          return {
+            content: [{
+              type: 'text',
+              text: `📊 **Enhanced Search Statistics**\n\n` +
+                    `**Search Performance:**\n` +
+                    `- Total queries: ${enhancedStats.totalQueries}\n` +
+                    `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
+                    `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
+                    `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
+                    `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
+                    `**Service Status:**\n` +
+                    `- LLM Re-ranker: ${serviceStatus.llmReranker.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                    `- Hybrid Search: ${serviceStatus.hybridSearch.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                    `- Search Cache: ${serviceStatus.searchCache.enabled ? '✅ Enabled' : '❌ Disabled'}`
+            }]
+          };
+        case 'clear_search_cache':
+          searchService.clearCaches();
+          return {
+            content: [{
+              type: 'text',
+              text: '🧹 Successfully cleared search cache and reset statistics'
+            }]
+          };
+        case 'invalidate_file_cache':
+          searchService.invalidateFileCache(args.file_path as string);
+          return {
+            content: [{
+              type: 'text',
+              text: `🔄 Successfully invalidated cache entries for file: ${args.file_path}`
+            }]
+          };
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
@@ -493,6 +650,16 @@ class CodebaseIndexingServer {
             return await this.handleReindexFile(args);
           case 'create_payload_indexes':
             return await this.handleCreatePayloadIndexes(args);
+          case 'search_codebase':
+            return await this.handleSearchCodebase(args);
+          case 'get_health_status':
+            return await this.handleGetHealthStatus(args);
+          case 'get_enhanced_stats':
+            return await this.handleGetEnhancedStats(args);
+          case 'clear_search_cache':
+            return await this.handleClearSearchCache(args);
+          case 'invalidate_file_cache':
+            return await this.handleInvalidateFileCache(args);
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
@@ -794,6 +961,106 @@ class CodebaseIndexingServer {
                 '✅ language index - for filtering by programming language (typescript, javascript, etc.)\n' +
                 '✅ filePath index - for file-specific searches\n\n' +
                 '🔍 Your collection is now ready for @codebase-style filtered searches!'
+        }
+      ]
+    };
+  }
+
+  private async handleSearchCodebase(args: any) {
+    const codebaseResult = await this.searchService.searchForCodeReferences({
+      query: args.query as string,
+      language: args.language as string,
+      chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
+      filePath: args.file_path as string,
+      limit: args.limit as number,
+      enableHybrid: args.enable_hybrid as boolean,
+      enableReranking: args.enable_reranking as boolean
+    }, args.max_tokens as number);
+    
+    const referencesText = codebaseResult.references.map((ref, index) => 
+      `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
+      `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``
+    ).join('\n\n');
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `🔍 **Enhanced Codebase Search Results** for "${args.query}"\n\n` +
+                `📊 **Search Metadata:**\n` +
+                `- Total results: ${codebaseResult.metadata.totalResults}\n` +
+                `- Search time: ${codebaseResult.metadata.searchTime}ms\n` +
+                `- Cache hit: ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
+                `- Hybrid search: ${codebaseResult.metadata.hybridUsed ? '✅' : '❌'}\n` +
+                `- LLM re-ranked: ${codebaseResult.metadata.reranked ? '✅' : '❌'}\n` +
+                `- Truncated: ${codebaseResult.truncated ? '⚠️ Yes' : '✅ No'}\n` +
+                (codebaseResult.summary ? `- Summary: ${codebaseResult.summary}\n` : '') +
+                `\n📝 **Code References:**\n\n${referencesText}`
+        }
+      ]
+    };
+  }
+
+  private async handleGetHealthStatus(_args: any) {
+    // TODO: Implement health monitoring service
+    return {
+      content: [
+        {
+          type: 'text',
+          text: '🏥 **System Health Status**\n\n' +
+                '✅ Search Service: Operational\n' +
+                '✅ Indexing Service: Operational\n' +
+                '⚠️ Health monitoring service not yet implemented'
+        }
+      ]
+    };
+  }
+
+  private async handleGetEnhancedStats(_args: any) {
+    const enhancedStats = this.searchService.getEnhancedSearchStats();
+    const serviceStatus = this.searchService.getServiceStatus();
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `📊 **Enhanced Search Statistics**\n\n` +
+                `**Search Performance:**\n` +
+                `- Total queries: ${enhancedStats.totalQueries}\n` +
+                `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
+                `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
+                `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
+                `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
+                `**Service Status:**\n` +
+                `- LLM Re-ranker: ${serviceStatus.llmReranker.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                `- Hybrid Search: ${serviceStatus.hybridSearch.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+                `- Search Cache: ${serviceStatus.searchCache.enabled ? '✅ Enabled' : '❌ Disabled'}`
+        }
+      ]
+    };
+  }
+
+  private async handleClearSearchCache(_args: any) {
+    this.searchService.clearCaches();
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: '🧹 Successfully cleared search cache and reset statistics'
+        }
+      ]
+    };
+  }
+
+  private async handleInvalidateFileCache(args: any) {
+    this.searchService.invalidateFileCache(args.file_path as string);
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `🔄 Successfully invalidated cache entries for file: ${args.file_path}`
         }
       ]
     };
