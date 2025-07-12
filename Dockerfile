@@ -53,5 +53,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
         res.statusCode === 200 ? process.exit(0) : process.exit(1); \
     }).on('error', () => process.exit(1));"
 
-# Start the HTTP server
-CMD ["npm", "run", "start:http"] 
+# Start the HTTP server with increased heap size (3GB for 4GB machine)
+CMD ["node", "--max-old-space-size=3072", "dist/http-server.js"] 
