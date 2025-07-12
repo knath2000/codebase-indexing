@@ -32,9 +32,54 @@ export class QdrantVectorClient {
           }
         });
         console.log(`Created collection: ${this.collectionName}`);
+      } else {
+        // Check if existing collection has correct dimensions
+        const collectionInfo = await this.client.getCollection(this.collectionName);
+        const existingDimensions = collectionInfo.config?.params?.vectors?.size;
+        
+        if (existingDimensions !== this.embeddingDimension) {
+          console.log(`⚠️  Collection exists but has wrong dimensions: ${existingDimensions}, expected: ${this.embeddingDimension}`);
+          console.log(`🔄 Recreating collection with correct dimensions...`);
+          await this.recreateCollection();
+        } else {
+          console.log(`✅ Collection exists with correct dimensions: ${this.embeddingDimension}`);
+        }
       }
     } catch (error) {
       throw new Error(`Failed to initialize collection: ${error}`);
+    }
+  }
+
+  /**
+   * Recreate the collection with correct dimensions (deletes all existing data)
+   */
+  async recreateCollection(): Promise<void> {
+    try {
+      console.log(`🗑️  Deleting existing collection: ${this.collectionName}`);
+      
+      // Delete existing collection
+      try {
+        await this.client.deleteCollection(this.collectionName);
+        console.log(`✅ Deleted existing collection`);
+      } catch (deleteError) {
+        console.log(`⚠️  Collection deletion failed (might not exist): ${deleteError}`);
+      }
+
+      // Wait a moment for deletion to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Create new collection with correct dimensions
+      console.log(`🎯 Creating new collection with ${this.embeddingDimension} dimensions`);
+      await this.client.createCollection(this.collectionName, {
+        vectors: {
+          size: this.embeddingDimension,
+          distance: 'Cosine'
+        }
+      });
+      
+      console.log(`✅ Successfully recreated collection: ${this.collectionName}`);
+    } catch (error) {
+      throw new Error(`Failed to recreate collection: ${error}`);
     }
   }
 
