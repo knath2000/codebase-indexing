@@ -6,7 +6,7 @@ export const ConfigSchema = z.object({
   qdrantUrl: z.string().default('http://localhost:6333'),
   qdrantApiKey: z.string().optional(),
   collectionName: z.string().default('codebase'),
-  embeddingModel: z.enum(['voyage-code-2', 'voyage-code-3', 'voyage-2', 'voyage-large-2']).default('voyage-code-2'),
+  embeddingModel: z.enum(['voyage-code-3', 'voyage-3.5', 'voyage-3-large', 'voyage-code-2', 'voyage-2', 'voyage-large-2']).default('voyage-code-3'),
   batchSize: z.number().default(100),
   chunkSize: z.number().default(1000),
   chunkOverlap: z.number().default(200),

@@ -21,7 +21,7 @@ export class VoyageClient {
    */
   async generateEmbeddings(
     input: string | string[],
-    model: string = 'voyage-code-2',
+    model: string = 'voyage-code-3',
     inputType: 'query' | 'document' = 'document'
   ): Promise<number[][]> {
     const request: VoyageEmbeddingRequest = {
@@ -53,7 +53,7 @@ export class VoyageClient {
    */
   async generateEmbedding(
     text: string,
-    model: string = 'voyage-code-2',
+    model: string = 'voyage-code-3',
     inputType: 'query' | 'document' = 'document'
   ): Promise<number[]> {
     const embeddings = await this.generateEmbeddings(text, model, inputType);
@@ -65,7 +65,7 @@ export class VoyageClient {
    */
   async generateEmbeddingsBatch(
     texts: string[],
-    model: string = 'voyage-code-2',
+    model: string = 'voyage-code-3',
     inputType: 'query' | 'document' = 'document',
     batchSize: number = 100
   ): Promise<number[][]> {
@@ -90,6 +90,9 @@ export class VoyageClient {
    */
   getEmbeddingDimension(model: string): number {
     const modelDimensions: Record<string, number> = {
+      'voyage-code-3': 1024,
+      'voyage-3.5': 1024,
+      'voyage-3-large': 1024,
       'voyage-code-2': 1536,
       'voyage-2': 1024,
       'voyage-large-2': 1536,
@@ -97,7 +100,7 @@ export class VoyageClient {
       'voyage-multimodal-3': 1024
     };
     
-    return modelDimensions[model] || 1536;
+    return modelDimensions[model] || 1024;
   }
 
   /**
@@ -105,7 +108,7 @@ export class VoyageClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await this.generateEmbedding('test', 'voyage-code-2');
+      await this.generateEmbedding('test', 'voyage-code-3');
       return true;
     } catch (error) {
       console.error('Voyage AI connection test failed:', error);

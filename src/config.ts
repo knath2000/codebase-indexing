@@ -13,7 +13,7 @@ export function loadConfig(): Config {
     qdrantUrl: process.env.QDRANT_URL || 'http://localhost:6333',
     qdrantApiKey: process.env.QDRANT_API_KEY,
     collectionName: process.env.COLLECTION_NAME || 'codebase',
-    embeddingModel: process.env.EMBEDDING_MODEL || 'voyage-code-2',
+    embeddingModel: process.env.EMBEDDING_MODEL || 'voyage-code-3',
     batchSize: parseInt(process.env.BATCH_SIZE || '100'),
     chunkSize: parseInt(process.env.CHUNK_SIZE || '1000'),
     chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || '200'),
@@ -80,7 +80,7 @@ export function validateConfig(config: Config): void {
     throw new Error('At least one supported extension must be specified');
   }
 
-  if (!['voyage-code-2', 'voyage-2', 'voyage-large-2'].includes(config.embeddingModel)) {
+  if (!['voyage-code-3', 'voyage-3.5', 'voyage-3-large', 'voyage-code-2', 'voyage-2', 'voyage-large-2'].includes(config.embeddingModel)) {
     console.warn(`Warning: Embedding model '${config.embeddingModel}' may not be supported`);
   }
 }
