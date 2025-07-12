@@ -28,7 +28,8 @@ export class VoyageClient {
       input,
       model,
       input_type: inputType,
-      truncation: true
+      truncation: true,
+      output_dimension: this.getEmbeddingDimension(model)  // Specify the dimension we want
     };
 
     try {

@@ -223,4 +223,5 @@ export interface VoyageEmbeddingRequest {
   model: string;
   input_type?: 'query' | 'document';
   truncation?: boolean;
+  output_dimension?: number;  // Support for custom embedding dimensions
 } 
