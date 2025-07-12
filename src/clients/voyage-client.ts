@@ -41,9 +41,18 @@ export class VoyageClient {
       return response.data.data.map(item => item.embedding);
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        const errorMessage = error.response?.data?.error?.message || error.message;
-        throw new Error(`Voyage AI API error: ${errorMessage}`);
+        console.error('Voyage AI API Error Details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          headers: error.response?.headers,
+          requestData: request,
+          requestHeaders: this.client.defaults.headers
+        });
+        const errorMessage = error.response?.data?.error?.message || error.response?.data?.message || error.message;
+        throw new Error(`Voyage AI API error (${error.response?.status}): ${errorMessage}`);
       }
+      console.error('Non-Axios error in Voyage client:', error);
       throw error;
     }
   }
@@ -108,7 +117,9 @@ export class VoyageClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await this.generateEmbedding('test', 'voyage-code-3');
+      console.log('Testing Voyage AI connection...');
+      const result = await this.generateEmbedding('test connection', 'voyage-code-3');
+      console.log('Voyage AI connection test successful, embedding dimension:', result.length);
       return true;
     } catch (error) {
       console.error('Voyage AI connection test failed:', error);
