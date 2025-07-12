@@ -4,12 +4,13 @@ FROM node:20-alpine
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including tree-sitter requirements
 RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    git
+    git \
+    libc6-compat
 
 # Copy package files
 COPY package*.json ./
@@ -23,7 +24,10 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Remove dev dependencies to reduce image size
+# Rebuild tree-sitter language grammars for the current platform
+RUN npm rebuild tree-sitter tree-sitter-javascript tree-sitter-python tree-sitter-typescript
+
+# Remove dev dependencies to reduce image size, but keep build tools for tree-sitter
 RUN npm prune --omit=dev --legacy-peer-deps
 
 # Create non-root user

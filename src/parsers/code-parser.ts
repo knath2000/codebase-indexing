@@ -10,19 +10,28 @@ import {
   ChunkStrategy 
 } from '../types.js';
 
-// Dynamic imports for tree-sitter language grammars
+// Dynamic imports for tree-sitter language grammars with error handling
 const loadLanguage = async (language: string): Promise<any> => {
-  switch (language) {
-    case 'javascript':
-      return (await import('tree-sitter-javascript')).default;
-    case 'typescript':
-      return (await import('tree-sitter-typescript')).typescript;
-    case 'tsx':
-      return (await import('tree-sitter-typescript')).tsx;
-    case 'python':
-      return (await import('tree-sitter-python')).default;
-    default:
-      throw new Error(`Language parser not available for: ${language}`);
+  try {
+    switch (language) {
+      case 'javascript':
+        const jsModule = await import('tree-sitter-javascript');
+        return jsModule.default;
+      case 'typescript':
+        const tsModule = await import('tree-sitter-typescript');
+        return tsModule.typescript;
+      case 'tsx':
+        const tsxModule = await import('tree-sitter-typescript');
+        return tsxModule.tsx;
+      case 'python':
+        const pyModule = await import('tree-sitter-python');
+        return pyModule.default;
+      default:
+        throw new Error(`Language parser not available for: ${language}`);
+    }
+  } catch (error) {
+    console.warn(`Failed to load Tree-sitter language grammar for ${language}:`, error);
+    throw error;
   }
 };
 
@@ -49,6 +58,9 @@ export class CodeParser {
 
     try {
       const grammar = await loadLanguage(language);
+      if (!grammar) {
+        throw new Error(`Grammar is null or undefined for language: ${language}`);
+      }
       this.parser.setLanguage(grammar);
       
       const tree = this.parser.parse(content);
@@ -57,6 +69,11 @@ export class CodeParser {
       return chunks;
     } catch (error) {
       console.warn(`Failed to parse ${filePath} with ${language} parser, falling back to generic:`, error);
+      console.warn(`Error details:`, {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return this.parseGenericFile(filePath, content);
     }
   }
