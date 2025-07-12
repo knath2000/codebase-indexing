@@ -108,19 +108,25 @@ export class IndexingService extends EventEmitter {
       // Process files in batches
       const batchSize = 10;
       const allChunks: CodeChunk[] = [];
+      console.log(`📁 Processing ${files.length} files in batches of ${batchSize}`);
 
       for (let i = 0; i < files.length; i += batchSize) {
         const batch = files.slice(i, i + batchSize);
+        console.log(`🔄 Processing file batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(files.length/batchSize)}`);
         const batchChunks = await this.processBatch(batch);
         allChunks.push(...batchChunks);
+        console.log(`📊 Accumulated ${allChunks.length} chunks so far`);
       }
 
+      console.log(`🎯 Finished processing all files. Total chunks: ${allChunks.length}`);
       this.progress.totalChunks = allChunks.length;
       this.progress.status = IndexingStatus.EMBEDDING;
       this.emit('progress', this.progress);
 
       // Generate embeddings and store
+      console.log(`🚀 Starting embedding and storage phase for ${allChunks.length} chunks`);
       await this.embedAndStore(allChunks);
+      console.log('✅ Embedding and storage completed successfully');
 
       // Update stats
       this.updateStats(allChunks);
@@ -340,27 +346,37 @@ export class IndexingService extends EventEmitter {
    * Generate embeddings and store in Qdrant
    */
   private async embedAndStore(chunks: CodeChunk[]): Promise<void> {
+    console.log(`🚀 Starting embedAndStore with ${chunks.length} chunks`);
+    
     if (chunks.length === 0) {
+      console.log('❌ No chunks to process, returning early');
       return;
     }
 
+    console.log('📊 Setting status to EMBEDDING');
     this.progress.status = IndexingStatus.EMBEDDING;
     this.emit('progress', this.progress);
 
     const batchSize = this.config.batchSize;
+    console.log(`📦 Using batch size: ${batchSize}`);
     const embeddings: EmbeddingVector[] = [];
 
     for (let i = 0; i < chunks.length; i += batchSize) {
       const batch = chunks.slice(i, i + batchSize);
       const texts = batch.map(chunk => chunk.content);
       
+      console.log(`🔄 Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(chunks.length/batchSize)} with ${batch.length} chunks`);
+      console.log(`📝 First chunk preview: ${texts[0]?.substring(0, 100)}...`);
+      
       try {
+        console.log(`🌐 Calling Voyage API with model: ${this.config.embeddingModel}`);
         const vectors = await this.voyageClient.generateEmbeddingsBatch(
           texts,
           this.config.embeddingModel,
           'document',
           batchSize
         );
+        console.log(`✅ Received ${vectors.length} embeddings from Voyage API`);
 
         for (let j = 0; j < batch.length; j++) {
           const chunk = batch[j];
@@ -388,21 +404,30 @@ export class IndexingService extends EventEmitter {
 
         this.progress.processedChunks += batch.length;
         this.emit('progress', this.progress);
+        console.log(`📈 Progress: ${this.progress.processedChunks}/${chunks.length} chunks processed`);
       } catch (error) {
-        console.error(`Error generating embeddings for batch:`, error);
+        console.error(`❌ Error generating embeddings for batch:`, error);
         throw error;
       }
     }
 
+    console.log(`🎯 Completed embedding generation for all ${embeddings.length} chunks`);
+    
     // Store embeddings in Qdrant
+    console.log('💾 Starting Qdrant storage phase');
     this.progress.status = IndexingStatus.STORING;
     this.emit('progress', this.progress);
 
     const storeBatchSize = 100;
+    console.log(`📦 Storing in batches of ${storeBatchSize}`);
+    
     for (let i = 0; i < embeddings.length; i += storeBatchSize) {
       const batch = embeddings.slice(i, i + storeBatchSize);
+      console.log(`💾 Storing batch ${Math.floor(i/storeBatchSize) + 1}/${Math.ceil(embeddings.length/storeBatchSize)} with ${batch.length} embeddings`);
       await this.qdrantClient.storeEmbeddings(batch);
     }
+    
+    console.log('✅ Successfully completed embedAndStore process');
   }
 
   /**
