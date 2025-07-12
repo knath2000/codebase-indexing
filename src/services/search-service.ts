@@ -47,24 +47,51 @@ export class SearchService {
   }
 
   /**
-   * Search for code chunks using semantic similarity
+   * Search for code chunks using semantic similarity (enhanced for Cursor-like @codebase functionality)
    */
   async search(query: SearchQuery): Promise<SearchResult[]> {
+    console.log(`🔍 [SearchService] Starting search for: "${query.query}"`);
+    console.log(`🔍 [SearchService] Search options:`, {
+      language: query.language,
+      chunkType: query.chunkType,
+      filePath: query.filePath,
+      limit: query.limit || 10,
+      threshold: query.threshold || 0.7
+    });
+
     try {
-      // Generate embedding for the query
+      // Validate query
+      if (!query.query || query.query.trim().length === 0) {
+        throw new Error('Search query cannot be empty');
+      }
+
+      // Generate embedding for the query using Voyage AI's code-optimized model
+      console.log(`🌐 [SearchService] Generating embedding with ${this.config.embeddingModel}`);
       const queryVector = await this.voyageClient.generateEmbedding(
         query.query,
         this.config.embeddingModel,
-        'query'
+        'query' // Use 'query' input type for search queries
       );
+
+      console.log(`✅ [SearchService] Generated embedding vector of length ${queryVector.length}`);
 
       // Search for similar vectors in Qdrant
       const results = await this.qdrantClient.searchSimilar(query, queryVector);
 
-      // Post-process results
-      return this.postProcessResults(results, query);
+      console.log(`🔍 [SearchService] Found ${results.length} raw results`);
+
+      // Post-process and enhance results
+      const processedResults = this.postProcessResults(results, query);
+      
+      console.log(`✅ [SearchService] Returning ${processedResults.length} processed results`);
+      return processedResults;
+
     } catch (error) {
-      throw new Error(`Search failed: ${error}`);
+      console.error(`❌ [SearchService] Search failed:`, error);
+      if (error instanceof Error) {
+        throw new Error(`SearchService failed: ${error.message}`);
+      }
+      throw new Error(`SearchService failed: ${String(error)}`);
     }
   }
 
@@ -315,40 +342,93 @@ export class SearchService {
   }
 
   /**
-   * Get search statistics
+   * Get comprehensive search statistics (enhanced for Cursor-like codebase insights)
    */
   async getSearchStats(): Promise<{
     totalChunks: number;
     languageDistribution: Record<string, number>;
     chunkTypeDistribution: Record<string, number>;
+    embeddingModel: string;
+    embeddingDimension: number;
+    collectionStatus: string;
   }> {
-    const totalChunks = await this.qdrantClient.countPoints();
+    console.log(`📊 [SearchService] Gathering comprehensive search statistics...`);
     
-    // Get sample of chunks to calculate distributions
-    const sampleQuery: SearchQuery = {
-      query: 'sample',
-      limit: 1000,
-      threshold: 0.0
-    };
+    try {
+      // Get total chunks count
+      const totalChunks = await this.qdrantClient.countPoints();
+      console.log(`📊 [SearchService] Total chunks indexed: ${totalChunks}`);
 
-    const sampleResults = await this.search(sampleQuery);
-    
-    const languageDistribution: Record<string, number> = {};
-    const chunkTypeDistribution: Record<string, number> = {};
-
-    sampleResults.forEach(result => {
-      const lang = result.chunk.language;
-      const type = result.chunk.chunkType;
+      // Get collection info for status
+      const collectionInfo = await this.qdrantClient.getCollectionInfo();
+      const collectionStatus = collectionInfo.status || 'unknown';
       
-      languageDistribution[lang] = (languageDistribution[lang] || 0) + 1;
-      chunkTypeDistribution[type] = (chunkTypeDistribution[type] || 0) + 1;
-    });
+      // Return immediate stats if no chunks exist
+      if (totalChunks === 0) {
+        return {
+          totalChunks: 0,
+          languageDistribution: {},
+          chunkTypeDistribution: {},
+          embeddingModel: this.config.embeddingModel,
+          embeddingDimension: this.voyageClient.getEmbeddingDimension(this.config.embeddingModel),
+          collectionStatus
+        };
+      }
 
-    return {
-      totalChunks,
-      languageDistribution,
-      chunkTypeDistribution
-    };
+      // Get sample of chunks to calculate distributions (use scroll instead of search for better sampling)
+      console.log(`📊 [SearchService] Sampling chunks for distribution analysis...`);
+      
+      const languageDistribution: Record<string, number> = {};
+      const chunkTypeDistribution: Record<string, number> = {};
+      
+      try {
+        // Use a broader sample query to get diverse results
+        const sampleQuery: SearchQuery = {
+          query: 'function class module',
+          limit: Math.min(500, totalChunks), // Sample up to 500 chunks or total chunks
+          threshold: 0.0 // Very low threshold to get diverse results
+        };
+
+        const sampleResults = await this.search(sampleQuery);
+        console.log(`📊 [SearchService] Analyzed ${sampleResults.length} chunks for distributions`);
+
+        sampleResults.forEach(result => {
+          const lang = result.chunk.language || 'unknown';
+          const type = result.chunk.chunkType || 'unknown';
+          
+          languageDistribution[lang] = (languageDistribution[lang] || 0) + 1;
+          chunkTypeDistribution[type] = (chunkTypeDistribution[type] || 0) + 1;
+        });
+        
+      } catch (sampleError) {
+        console.warn(`⚠️ [SearchService] Could not gather distribution data:`, sampleError);
+        // Continue with empty distributions if sampling fails
+      }
+
+      const stats = {
+        totalChunks,
+        languageDistribution,
+        chunkTypeDistribution,
+        embeddingModel: this.config.embeddingModel,
+        embeddingDimension: this.voyageClient.getEmbeddingDimension(this.config.embeddingModel),
+        collectionStatus
+      };
+
+      console.log(`✅ [SearchService] Statistics gathered successfully:`, {
+        totalChunks: stats.totalChunks,
+        languages: Object.keys(stats.languageDistribution).length,
+        chunkTypes: Object.keys(stats.chunkTypeDistribution).length,
+        model: stats.embeddingModel,
+        dimensions: stats.embeddingDimension,
+        status: stats.collectionStatus
+      });
+
+      return stats;
+      
+    } catch (error) {
+      console.error(`❌ [SearchService] Failed to gather search statistics:`, error);
+      throw new Error(`Failed to get search statistics: ${error}`);
+    }
   }
 
   /**

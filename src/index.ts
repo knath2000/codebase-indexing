@@ -670,18 +670,40 @@ class CodebaseIndexingServer {
   private async handleGetSearchStats(_args: any) {
     const stats = await this.searchService.getSearchStats();
     
+    // Format language distribution
+    const languageStats = Object.entries(stats.languageDistribution)
+      .sort(([, a], [, b]) => b - a)
+      .map(([lang, count]) => `  • ${lang}: ${count} chunks`)
+      .join('\n');
+    
+    // Format chunk type distribution  
+    const chunkTypeStats = Object.entries(stats.chunkTypeDistribution)
+      .sort(([, a], [, b]) => b - a)
+      .map(([type, count]) => `  • ${type}: ${count} chunks`)
+      .join('\n');
+    
     return {
       content: [
         {
           type: 'text',
-          text: `Search Statistics:\n\n` +
-                `Total indexed chunks: ${stats.totalChunks}\n\n` +
-                `Language distribution:\n${Object.entries(stats.languageDistribution)
-                  .map(([lang, count]) => `  ${lang}: ${count}`)
-                  .join('\n')}\n\n` +
-                `Chunk type distribution:\n${Object.entries(stats.chunkTypeDistribution)
-                  .map(([type, count]) => `  ${type}: ${count}`)
-                  .join('\n')}`
+          text: `🔍 **Codebase Search Statistics**\n\n` +
+                `📊 **Overview:**\n` +
+                `• Total indexed chunks: **${stats.totalChunks.toLocaleString()}**\n` +
+                `• Embedding model: **${stats.embeddingModel}** (${stats.embeddingDimension}D)\n` +
+                `• Collection status: **${stats.collectionStatus}**\n\n` +
+                
+                `💻 **Language Distribution:**\n` +
+                (languageStats || '  • No language data available') + '\n\n' +
+                
+                `🏷️ **Chunk Type Distribution:**\n` +
+                (chunkTypeStats || '  • No chunk type data available') + '\n\n' +
+                
+                `✨ **Search Capabilities:**\n` +
+                `• Semantic code search with **${stats.embeddingModel}**\n` +
+                `• Context-aware suggestions\n` +
+                `• Function, class, and module search\n` +
+                `• File-specific and language-specific filtering\n` +
+                `• Real-time codebase understanding`
         }
       ]
     };

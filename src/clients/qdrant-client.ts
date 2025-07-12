@@ -169,46 +169,91 @@ export class QdrantVectorClient {
   }
 
   /**
-   * Search for similar vectors
+   * Search for similar vectors with enhanced error handling and logging
    */
   async searchSimilar(
     query: SearchQuery,
     queryVector: number[]
   ): Promise<SearchResult[]> {
+    console.log(`🔍 [Qdrant] Starting search with query: "${query.query}"`);
+    console.log(`🔍 [Qdrant] Search parameters:`, {
+      limit: query.limit || 10,
+      threshold: query.threshold || 0.7,
+      language: query.language,
+      filePath: query.filePath,
+      chunkType: query.chunkType,
+      vectorLength: queryVector.length
+    });
+
     try {
+      // Validate input parameters
+      if (!queryVector || queryVector.length === 0) {
+        throw new Error('Query vector is empty or invalid');
+      }
+      
+      if (queryVector.length !== this.embeddingDimension) {
+        throw new Error(`Query vector dimension mismatch: expected ${this.embeddingDimension}, got ${queryVector.length}`);
+      }
+
       const searchParams: any = {
         vector: queryVector,
         limit: query.limit || 10,
-        score_threshold: query.threshold || 0.7
+        score_threshold: query.threshold || 0.7,
+        with_payload: true,
+        with_vector: false // Don't return vectors to save bandwidth
       };
 
-      // Add filters based on query parameters
-      const filters: any = {};
+      // Build filters based on query parameters
+      const filterConditions: any[] = [];
+      
       if (query.language) {
-        filters.language = { match: { value: query.language } };
+        filterConditions.push({ key: 'language', match: { value: query.language } });
+        console.log(`🔍 [Qdrant] Adding language filter: ${query.language}`);
       }
+      
       if (query.filePath) {
-        filters.filePath = { match: { value: query.filePath } };
+        filterConditions.push({ key: 'filePath', match: { value: query.filePath } });
+        console.log(`🔍 [Qdrant] Adding file path filter: ${query.filePath}`);
       }
+      
       if (query.chunkType) {
-        filters.chunkType = { match: { value: query.chunkType } };
+        filterConditions.push({ key: 'chunkType', match: { value: query.chunkType } });
+        console.log(`🔍 [Qdrant] Adding chunk type filter: ${query.chunkType}`);
       }
 
-      if (Object.keys(filters).length > 0) {
-        searchParams.filter = { must: Object.entries(filters).map(([key, value]) => ({ key, match: (value as any).match })) };
+      if (filterConditions.length > 0) {
+        searchParams.filter = { must: filterConditions };
+        console.log(`🔍 [Qdrant] Applied ${filterConditions.length} filter(s)`);
       }
 
+      console.log(`🔍 [Qdrant] Executing search in collection: ${this.collectionName}`);
       const searchResult = await this.client.search(this.collectionName, searchParams);
+      
+      console.log(`✅ [Qdrant] Search completed successfully, found ${searchResult.length} results`);
 
-      return searchResult.map(result => ({
-        id: result.id as string,
-        score: result.score,
-        chunk: this.payloadToCodeChunk(result.payload as unknown as EmbeddingPayload),
-        snippet: this.createSnippet(result.payload as unknown as EmbeddingPayload),
-        context: query.includeMetadata ? JSON.stringify(result.payload) : undefined
-      }));
+      const results = searchResult.map(result => {
+        const chunk = this.payloadToCodeChunk(result.payload as unknown as EmbeddingPayload);
+        chunk.id = result.id as string; // Set the ID from the search result
+        
+        return {
+          id: result.id as string,
+          score: result.score,
+          chunk,
+          snippet: this.createSnippet(result.payload as unknown as EmbeddingPayload),
+          context: this.createContextDescription(result.payload as unknown as EmbeddingPayload)
+        };
+      });
+
+      console.log(`🔍 [Qdrant] Returning ${results.length} processed results`);
+      return results;
+
     } catch (error) {
-      throw new Error(`Search failed: ${error}`);
+      console.error(`❌ [Qdrant] Search failed:`, error);
+      if (error instanceof Error) {
+        // Enhance error message with more context
+        throw new Error(`Qdrant search failed: ${error.message} (Collection: ${this.collectionName}, Query: "${query.query}")`);
+      }
+      throw new Error(`Qdrant search failed: ${String(error)}`);
     }
   }
 
@@ -366,5 +411,40 @@ export class QdrantVectorClient {
     
     const snippet = lines.slice(0, maxLines).join('\n');
     return snippet + '\n...';
+  }
+
+  /**
+   * Create a context description for search results (similar to Cursor's @codebase format)
+   */
+  private createContextDescription(payload: EmbeddingPayload): string {
+    const parts: string[] = [];
+    
+    // Add file path (relative format)
+    const filePath = payload.filePath.startsWith('/app/') 
+      ? payload.filePath.substring(5) 
+      : payload.filePath;
+    parts.push(`📁 ${filePath}`);
+    
+    // Add line range
+    if (payload.startLine && payload.endLine) {
+      parts.push(`📍 Lines ${payload.startLine}-${payload.endLine}`);
+    }
+    
+    // Add function/class name if available
+    if (payload.functionName) {
+      parts.push(`🔧 Function: ${payload.functionName}`);
+    } else if (payload.className) {
+      parts.push(`📦 Class: ${payload.className}`);
+    } else if (payload.moduleName) {
+      parts.push(`📂 Module: ${payload.moduleName}`);
+    }
+    
+    // Add chunk type
+    parts.push(`🏷️  Type: ${payload.chunkType}`);
+    
+    // Add language
+    parts.push(`💻 ${payload.language}`);
+    
+    return parts.join(' | ');
   }
 } 
