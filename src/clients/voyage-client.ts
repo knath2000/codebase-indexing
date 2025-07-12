@@ -99,7 +99,7 @@ export class VoyageClient {
    */
   getEmbeddingDimension(model: string): number {
     const modelDimensions: Record<string, number> = {
-      'voyage-code-3': 1024,
+      'voyage-code-3': 2048,  // Updated to 2048 dimensions per Voyage AI docs
       'voyage-3.5': 1024,
       'voyage-3-large': 1024,
       'voyage-code-2': 1536,
