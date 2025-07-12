@@ -32,7 +32,8 @@
     "tree-sitter-python": "^0.23.2",
     "tree-sitter-typescript": "^0.23.0",
     "uuid": "^9.0.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "chokidar": "^3.5.3"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

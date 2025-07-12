@@ -7,6 +7,7 @@ import { Config, ChunkType } from './types.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
+import { WorkspaceWatcher } from './services/workspace-watcher.js';
 
 // Server configuration
 const SERVER_NAME = 'codebase-indexing-server';
@@ -398,6 +399,8 @@ class CodebaseIndexingServer {
   private server: Server;
   private indexingService: IndexingService;
   private searchService: SearchService;
+  private workspaceWatcher: WorkspaceWatcher;
+  private workspaceDir: string;
 
   constructor(config: Config) {
     this.server = new Server({
@@ -411,6 +414,13 @@ class CodebaseIndexingServer {
 
     this.indexingService = new IndexingService(config);
     this.searchService = new SearchService(config);
+    this.workspaceDir = process.cwd();
+    this.workspaceWatcher = new WorkspaceWatcher(
+      this.workspaceDir,
+      this.indexingService,
+      config.supportedExtensions,
+      config.excludePatterns
+    );
 
     this.setupToolHandlers();
   }
@@ -723,6 +733,15 @@ class CodebaseIndexingServer {
     // Initialize services
     await this.indexingService.initialize();
     await this.searchService.initialize();
+    // Automatically index workspace if no index exists yet
+    const existingChunks = await this.indexingService.countIndexedChunks();
+    if (existingChunks === 0) {
+      console.log('No existing index detected – indexing workspace for the first time...');
+      await this.indexingService.indexDirectory(this.workspaceDir);
+    }
+
+    // Start watching workspace for real-time updates
+    this.workspaceWatcher.start();
     
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
