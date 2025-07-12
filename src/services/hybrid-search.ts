@@ -7,12 +7,10 @@ import {
 } from '../types.js';
 
 export class HybridSearchService {
-  private config: Config;
   private enabled: boolean;
   private alpha: number; // Weight for dense vs sparse (0.7 = 70% dense, 30% sparse)
 
   constructor(config: Config) {
-    this.config = config;
     this.enabled = config.enableHybridSearch;
     this.alpha = config.hybridSearchAlpha;
   }
@@ -28,7 +26,7 @@ export class HybridSearchService {
    * Perform hybrid search combining dense and sparse retrieval
    */
   async hybridSearch(
-    query: SearchQuery,
+    _query: SearchQuery,
     denseResults: SearchResult[],
     sparseResults?: SearchResult[]
   ): Promise<HybridSearchResult> {

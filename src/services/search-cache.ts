@@ -3,14 +3,12 @@ import { createHash } from 'crypto';
 
 export class SearchCacheService {
   private cache: Map<string, SearchCache>;
-  private config: Config;
   private ttl: number;
   private maxSize: number;
   private hitCount: number;
   private missCount: number;
 
   constructor(config: Config) {
-    this.config = config;
     this.cache = new Map();
     this.ttl = config.searchCacheTTL * 1000; // Convert to milliseconds
     this.maxSize = 1000; // Maximum number of cached queries

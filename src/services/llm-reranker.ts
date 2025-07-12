@@ -1,13 +1,11 @@
 import { SearchResult, LLMRerankerRequest, LLMRerankerResponse, Config } from '../types.js';
 
 export class LLMRerankerService {
-  private config: Config;
   private apiKey: string | undefined;
   private model: string;
   private enabled: boolean;
 
   constructor(config: Config) {
-    this.config = config;
     this.apiKey = config.llmRerankerApiKey || undefined;
     this.model = config.llmRerankerModel;
     this.enabled = config.enableLLMReranking && !!this.apiKey;
@@ -252,7 +250,7 @@ JSON Response:`;
       console.warn(`Response was: ${response}`);
       
       // Fallback to original order
-      return candidates.slice(0, maxResults).map((result, index) => ({
+      return candidates.slice(0, maxResults).map((result, _index) => ({
         ...result,
         rerankedScore: result.score * 0.9 // Slightly lower than original
       }));

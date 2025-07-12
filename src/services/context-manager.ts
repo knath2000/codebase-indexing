@@ -8,11 +8,9 @@ import {
 } from '../types.js';
 
 export class ContextManagerService {
-  private config: Config;
   private tokenBudget: TokenBudget;
 
   constructor(config: Config) {
-    this.config = config;
     this.tokenBudget = {
       total: config.contextWindowSize,
       reserved: 2000, // Reserve tokens for system prompts, etc.
@@ -256,7 +254,7 @@ export class ContextManagerService {
    */
   optimizeForContext(
     results: SearchResult[], 
-    query: string,
+    _query: string,
     preferences: {
       preferFunctions?: boolean;
       preferClasses?: boolean;

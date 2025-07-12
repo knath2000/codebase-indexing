@@ -1,6 +1,7 @@
 import Parser from 'tree-sitter';
 import { readFileSync } from 'fs';
 import { extname } from 'path';
+import { createHash } from 'crypto';
 import { 
   CodeChunk, 
   ChunkType, 
@@ -278,6 +279,7 @@ export class CodeParser {
       functionName: strategy.chunkType === ChunkType.FUNCTION ? name : undefined,
       className: strategy.chunkType === ChunkType.CLASS ? name : undefined,
       moduleName: strategy.chunkType === ChunkType.MODULE ? name : undefined,
+      contentHash: this.generateContentHash(chunkContent),
       metadata
     };
   }
@@ -326,6 +328,7 @@ export class CodeParser {
         startLine,
         endLine,
         chunkType: ChunkType.GENERIC,
+        contentHash: this.generateContentHash(chunkContent),
         metadata
       });
     }
@@ -365,8 +368,29 @@ export class CodeParser {
         column: node.endPosition.column
       },
       text: node.text,
+      depth: this.calculateNodeDepth(node),
       children: node.children.map(child => this.nodeToParser(child))
     };
+  }
+
+  /**
+   * Calculate node depth in the AST
+   */
+  private calculateNodeDepth(node: Parser.SyntaxNode): number {
+    let depth = 0;
+    let current = node.parent;
+    while (current) {
+      depth++;
+      current = current.parent;
+    }
+    return depth;
+  }
+
+  /**
+   * Generate content hash for chunk
+   */
+  private generateContentHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex');
   }
 
   /**
@@ -538,7 +562,10 @@ export class CodeParser {
         }
       ],
       keywords: ['function', 'class', 'interface', 'const', 'let', 'var', 'import', 'export'],
-      commentPatterns: ['//', '/*', '*/']
+      commentPatterns: ['//', '/*', '*/'],
+      astNodeMappings: {},
+      contextualChunking: false,
+      supportsSparseSearch: true
     };
 
     // Python configuration
@@ -559,7 +586,10 @@ export class CodeParser {
         }
       ],
       keywords: ['def', 'class', 'import', 'from', 'if', 'else', 'for', 'while'],
-      commentPatterns: ['#']
+      commentPatterns: ['#'],
+      astNodeMappings: {},
+      contextualChunking: false,
+      supportsSparseSearch: true
     };
 
     this.languageConfigs.set('javascript', jsConfig);

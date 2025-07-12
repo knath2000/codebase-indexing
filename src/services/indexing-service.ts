@@ -44,7 +44,10 @@ export class IndexingService extends EventEmitter {
       currentFile: '',
       status: IndexingStatus.IDLE,
       startTime: new Date(),
-      errors: []
+      errors: [],
+      incrementalUpdates: 0,
+      skippedFiles: 0,
+      cacheHits: 0
     };
 
     this.stats = {
@@ -58,7 +61,14 @@ export class IndexingService extends EventEmitter {
       averageChunkSize: 0,
       largestFile: '',
       errors: 0,
-      warnings: 0
+      warnings: 0,
+      incrementalUpdates: 0,
+      cacheHitRate: 0,
+      averageComplexity: 0,
+      tokensIndexed: 0,
+      memoryUsage: 0,
+      searchQueriesServed: 0,
+      averageSearchLatency: 0
     };
   }
 
@@ -392,6 +402,8 @@ export class IndexingService extends EventEmitter {
             functionName: chunk.functionName || undefined,
             className: chunk.className || undefined,
             moduleName: chunk.moduleName || undefined,
+            contentHash: chunk.contentHash,
+            tokenCount: this.estimateTokenCount(chunk.content),
             metadata: chunk.metadata
           };
 
@@ -448,6 +460,14 @@ export class IndexingService extends EventEmitter {
     }
 
     return false;
+  }
+
+  /**
+   * Estimate token count for content (rough approximation)
+   */
+  private estimateTokenCount(content: string): number {
+    // Rough approximation: 1 token ≈ 4 characters for code
+    return Math.ceil(content.length / 4);
   }
 
   /**

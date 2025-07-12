@@ -453,6 +453,7 @@ export class QdrantVectorClient {
       functionName: payload.functionName,
       className: payload.className,
       moduleName: payload.moduleName,
+      contentHash: payload.contentHash,
       metadata: payload.metadata
     };
   }

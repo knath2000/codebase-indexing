@@ -11,7 +11,7 @@ import {
   ChunkType,
   CodeChunk,
   CodeReference,
-  HybridSearchResult,
+
   LLMRerankerRequest,
   SearchStats
 } from '../types.js';
@@ -626,7 +626,6 @@ export class SearchService {
     };
   }> {
     const startTime = Date.now();
-    const originalLimit = query.limit;
     
     // Increase limit for better context selection
     const enhancedQuery = {
@@ -674,8 +673,6 @@ export class SearchService {
    */
   getEnhancedSearchStats(): SearchStats {
     const cacheStats = this.searchCache.getStats();
-    const hybridStats = this.hybridSearch.getStats();
-    const rerankerStats = this.llmReranker.getStats();
     
     return {
       totalQueries: this.searchStats.totalQueries,
