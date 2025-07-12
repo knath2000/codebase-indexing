@@ -241,8 +241,20 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
 
         // Handle notification that does not expect a response
         case 'notifications/initialized':
-          // This is a JSON-RPC notification (no id). Acknowledge with 204 No Content
-          res.status(204).send();
+          // The client may send this as a JSON-RPC notification (no id) _or_ as a
+          // regular request (with an id). If it's a pure notification we must
+          // NOT return a body (per the JSON-RPC spec). When an id is supplied
+          // return a standard success response so the client doesn’t treat the
+          // call as an unknown-method error.
+          if (id === undefined || id === null) {
+            res.status(204).send();
+          } else {
+            res.json({
+              jsonrpc: '2.0',
+              id,
+              result: null
+            });
+          }
           return;
           
         default:
