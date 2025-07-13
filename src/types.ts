@@ -164,10 +164,16 @@ export interface SearchQuery {
   chunkType?: ChunkType;
   filePath?: string;
   limit?: number;
-  threshold?: number;
+  threshold?: number; // Minimum similarity threshold (default 0.25)
   enableHybrid?: boolean;
   enableReranking?: boolean;
-  llmRerankerTimeoutMs?: number; // Optional per-query override
+  llmRerankerTimeoutMs?: number;
+  /** Maximum number of results to keep per file type (function/class/etc.). */
+  maxFilesPerType?: number;
+  /** Boost functions when true (overrides automatic heuristics). */
+  preferFunctions?: boolean;
+  /** Boost classes when true (overrides automatic heuristics). */
+  preferClasses?: boolean;
 }
 
 // Cursor-style code reference format

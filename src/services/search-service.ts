@@ -74,9 +74,13 @@ export class SearchService {
     enableHybrid?: boolean;
     enableReranking?: boolean;
     llmRerankerTimeoutMs?: number;
+    maxFilesPerType?: number;
+    preferFunctions?: boolean;
+    preferClasses?: boolean;
   }): SearchQuery {
     const searchQuery: SearchQuery = {
       query: args.query,
+      threshold: args.threshold ?? 0.25, // default threshold lowered to 0.25
     };
 
     if (args.language !== undefined) { searchQuery.language = args.language; }
@@ -87,6 +91,9 @@ export class SearchService {
     if (args.enableHybrid !== undefined) { searchQuery.enableHybrid = args.enableHybrid; }
     if (args.enableReranking !== undefined) { searchQuery.enableReranking = args.enableReranking; }
     if (args.llmRerankerTimeoutMs !== undefined) { searchQuery.llmRerankerTimeoutMs = args.llmRerankerTimeoutMs; }
+    if (args.maxFilesPerType !== undefined) { searchQuery.maxFilesPerType = args.maxFilesPerType; }
+    if (args.preferFunctions !== undefined) { searchQuery.preferFunctions = args.preferFunctions; }
+    if (args.preferClasses !== undefined) { searchQuery.preferClasses = args.preferClasses; }
 
     return searchQuery;
   }
@@ -124,7 +131,7 @@ export class SearchService {
       chunkType: query.chunkType,
       filePath: query.filePath,
       limit: query.limit || 50, // Increased from 10 to 50 for better coverage
-      threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
+      threshold: query.threshold ?? 0.25, // Default now 0.25 for broader recall
       enableHybrid: query.enableHybrid ?? this.config.enableHybridSearch,
       enableReranking: query.enableReranking ?? this.config.enableLLMReranking,
       llmRerankerTimeoutMs: query.llmRerankerTimeoutMs ?? this.config.llmRerankerTimeoutMs
@@ -197,9 +204,9 @@ export class SearchService {
       // Optimize results for context
       console.time('[SearchService] Context optimization');
       finalResults = this.contextManager.optimizeForContext(finalResults, query.query, {
-        preferFunctions: query.chunkType === ChunkType.FUNCTION,
-        preferClasses: query.chunkType === ChunkType.CLASS,
-        maxFilesPerType: 3,
+        preferFunctions: query.preferFunctions ?? (query.chunkType === ChunkType.FUNCTION),
+        preferClasses: query.preferClasses ?? (query.chunkType === ChunkType.CLASS),
+        maxFilesPerType: query.maxFilesPerType ?? 3,
         diversifyLanguages: !query.language
       });
       console.timeEnd('[SearchService] Context optimization');

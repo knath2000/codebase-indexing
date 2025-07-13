@@ -255,7 +255,7 @@ export class QdrantVectorClient {
     console.log(`🔍 [Qdrant] Starting search with query: "${query.query}"`);
     console.log(`🔍 [Qdrant] Search parameters:`, {
       limit: query.limit || 50, // Increased from 10 to 50 for better coverage
-      threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
+      threshold: query.threshold ?? 0.25,
       language: query.language,
       filePath: query.filePath,
       chunkType: query.chunkType,
@@ -275,7 +275,7 @@ export class QdrantVectorClient {
       const searchParams: any = {
         vector: queryVector,
         limit: query.limit || 50, // Increased from 10 to 50 for better coverage
-        score_threshold: query.threshold || 0.4, // Lowered from 0.5 to 0.4 for more results
+        score_threshold: query.threshold ?? 0.25,
         with_payload: true,
         with_vector: false
       };
@@ -399,7 +399,7 @@ export class QdrantVectorClient {
           score: this.calculateKeywordScore(searchText, point.payload.content)
         };
       })
-      .filter(result => result.score > (query.threshold || 0.4)) // Use consistent threshold
+      .filter(result => result.score > (query.threshold ?? 0.25))
       .sort((a, b) => b.score - a.score)
       .slice(0, query.limit || 50); // Use consistent limit
 
