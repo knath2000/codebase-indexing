@@ -117,10 +117,7 @@ async function ensureServicesInitialized(): Promise<void> {
 // Expose ensureServicesInitialized globally for tool handlers
 (globalThis as any).ensureServicesInitialized = ensureServicesInitialized;
 
-// Send SSE event helper for JSON-RPC messages
-function sendSSEEvent(res: Response, data: any) {
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
+
 
 // Handle GET requests for SSE connection
 app.get('/mcp', async (_req: Request, res: Response) => {
