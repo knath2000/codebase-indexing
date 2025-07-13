@@ -41,8 +41,13 @@ let indexingService: IndexingService | null = null;
 let searchService: SearchService | null = null;
 let servicesInitialized = false;
 
-// Store active sessions
-const activeSessions = new Map<string, { id: string; startTime: Date; lastHeartbeat: Date }>();
+// Store active sessions with SSE response objects
+const activeSessions = new Map<string, { 
+  id: string; 
+  startTime: Date; 
+  lastHeartbeat: Date;
+  sseResponse?: Response;
+}>();
 
 // Initialize MCP server quickly (without heavy network calls)
 async function initializeMcpServer() {
@@ -119,7 +124,7 @@ async function ensureServicesInitialized(): Promise<void> {
 
 
 
-// Handle GET requests for SSE connection
+// Handle GET requests for SSE connection (server-to-client messages)
 app.get('/mcp', async (_req: Request, res: Response) => {
   try {
     if (!mcpServer) {
@@ -131,7 +136,8 @@ app.get('/mcp', async (_req: Request, res: Response) => {
     const session = {
       id: sessionId,
       startTime: new Date(),
-      lastHeartbeat: new Date()
+      lastHeartbeat: new Date(),
+      sseResponse: res
     };
     activeSessions.set(sessionId, session);
     
@@ -145,6 +151,10 @@ app.get('/mcp', async (_req: Request, res: Response) => {
     });
     
     console.log(`SSE connection established with session: ${sessionId}`);
+    
+    // Send the endpoint event with the message endpoint URL and session ID
+    res.write(`event: endpoint\n`);
+    res.write(`data: /message?sessionId=${sessionId}\n\n`);
     
     // Keep connection alive with periodic comments (standard SSE keepalive)
     const keepAliveInterval = setInterval(() => {
@@ -180,14 +190,42 @@ app.get('/mcp', async (_req: Request, res: Response) => {
   }
 });
 
-// Handle POST requests for JSON-RPC
-app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
+// Handle POST requests for JSON-RPC messages (client-to-server)
+app.post('/message', async (req: Request, res: Response): Promise<void> => {
   try {
     if (!mcpServer) {
       throw new Error('MCP server not initialized');
     }
     
     console.log('Received POST request body:', JSON.stringify(req.body, null, 2));
+    
+    // Get session ID from query params
+    const sessionId = req.query.sessionId as string;
+    if (!sessionId) {
+      res.status(400).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32600,
+          message: 'Missing sessionId parameter'
+        }
+      });
+      return;
+    }
+    
+    // Find the session
+    const session = activeSessions.get(sessionId);
+    if (!session || !session.sseResponse) {
+      res.status(400).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32600,
+          message: 'Invalid or expired session'
+        }
+      });
+      return;
+    }
     
     const { jsonrpc, id, method, params } = req.body;
     
@@ -278,7 +316,13 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
       };
       
       console.log(`Sending JSON-RPC response for ${method} (id: ${id}):`, JSON.stringify(response, null, 2));
-      res.json(response);
+      
+      // Send response via SSE
+      session.sseResponse.write(`event: message\n`);
+      session.sseResponse.write(`data: ${JSON.stringify(response)}\n\n`);
+      
+      // Send HTTP acknowledgment
+      res.status(200).send('OK');
       
       return;
       
@@ -293,7 +337,15 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
         }
       };
       console.log('Sending error response:', JSON.stringify(errorResponse, null, 2));
-      res.status(500).json(errorResponse);
+      
+      // Send error response via SSE
+      if (session?.sseResponse && !session.sseResponse.destroyed) {
+        session.sseResponse.write(`event: message\n`);
+        session.sseResponse.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
+      }
+      
+      // Send HTTP acknowledgment
+      res.status(500).send('Error processed');
     }
     
   } catch (error) {
@@ -308,7 +360,18 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
       }
     };
     console.log('Sending critical error response:', JSON.stringify(errorResponse, null, 2));
-    res.status(500).json(errorResponse);
+    
+    // Try to get session and send via SSE if possible
+    const sessionId = req.query.sessionId as string;
+    if (sessionId) {
+      const session = activeSessions.get(sessionId);
+      if (session?.sseResponse && !session.sseResponse.destroyed) {
+        session.sseResponse.write(`event: message\n`);
+        session.sseResponse.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
+      }
+    }
+    
+    res.status(500).send('Critical error processed');
     return;
   }
 });
