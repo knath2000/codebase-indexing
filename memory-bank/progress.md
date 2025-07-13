@@ -92,6 +92,13 @@
 - [x] **Memory Bank Updates**: Documented research findings and architectural insights
 - [x] **Knowledge Preservation**: Captured research methodology and technical patterns
 
+### ✅ COMPLETED: Fly.io Deployment Fix (Dockerfile Update)
+- [x] **Base Image Change**: Switched from `node:20-alpine` to `node:20-slim` for glibc compatibility
+- [x] **System Dependencies**: Updated `apk add` to `apt-get install` for Debian
+- [x] **User Creation**: Replaced Alpine-specific user/group commands with Debian equivalents
+- [x] **Build Fix**: Resolved `tree-sitter-markdown` native module build error during `npm ci`
+- [x] **Deployment**: Triggered new deployment via Git commit
+
 ## 📋 Planned Features (Short-term)
 
 ### Core Cursor Parity Features

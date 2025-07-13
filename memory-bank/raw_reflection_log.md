@@ -164,3 +164,27 @@
 - Knowledge capture ensures research insights are preserved
 
 --- 
+
+---
+**Date:** 2025-07-13  
+**TaskRef:** "Fly.io Deployment Fix - Dockerfile Update"
+
+**Learnings:**
+- `tree-sitter-markdown` requires C++ exception support during compilation.
+- Alpine Linux's musl toolchain (used in `node:20-alpine`) disables C++ exceptions by default, leading to `node-gyp` build failures for native modules.
+- Switching to a glibc-based image like `node:20-slim` (Debian) resolves this, as its GCC toolchain enables exceptions by default.
+- This change required updating `apk add` commands to `apt-get install` and Alpine-specific user/group creation commands to their Debian equivalents.
+
+**Key Implementation Details:**
+- `Dockerfile` updated: `FROM node:20-alpine` -> `FROM node:20-slim`.
+- `RUN apk add ...` replaced with `RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git && rm -rf /var/lib/apt/lists/*`.
+- Alpine user/group creation (`addgroup -S`, `adduser -S`) replaced with Debian equivalents (`groupadd`, `useradd -s /usr/sbin/nologin`).
+
+**Successes:**
+- The Docker build should now succeed on Fly.io, allowing the application to deploy.
+- Maintained application logic and privacy features, as the change was purely infrastructure-related.
+
+**Improvements_Identified_For_Consolidation:**
+- General pattern: Native Node.js module compilation issues with Alpine due to `musl` toolchain vs. `glibc` toolchain.
+- Dockerfile best practices: Adjusting commands for different Linux distributions (Alpine vs. Debian) when changing base images.
+--- 

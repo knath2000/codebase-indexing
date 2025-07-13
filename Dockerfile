@@ -17,7 +17,7 @@ RUN apt-get update \
 COPY package*.json ./
 
 # Install all dependencies for build
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --omit=optional
 
 # Copy source code
 COPY . .
