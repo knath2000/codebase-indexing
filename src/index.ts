@@ -228,14 +228,14 @@ export const TOOL_DEFINITIONS = [
     }
   },
   {
-    name: 'search_codebase',
-    description: 'Enhanced codebase search with Cursor-style code references, hybrid retrieval, and LLM re-ranking',
+    name: 'codebase_search',
+    description: 'Natural language search for codebase understanding. Handles queries like "How is user authentication handled?", "Database connection setup", "Error handling patterns", "API endpoint definitions", "Component state management". Returns relevant code snippets with file paths, line numbers, similarity scores, and navigation links.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Search query for codebase'
+          description: 'Natural language query describing what you want to find in the codebase (e.g., "How is user authentication handled?", "Database connection setup", "Error handling patterns")'
         },
         language: {
           type: 'string',
@@ -487,7 +487,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                     '🔍 Your collection is now ready for @codebase-style filtered searches!'
             }]
           };
-        case 'search_codebase':
+        case 'codebase_search':
           const codebaseResult = await searchService.searchForCodeReferences({
             query: args.query as string,
             language: args.language as string,
@@ -654,8 +654,8 @@ class CodebaseIndexingServer {
             return await this.handleReindexFile(args);
           case 'create_payload_indexes':
             return await this.handleCreatePayloadIndexes(args);
-          case 'search_codebase':
-            return await this.handleSearchCodebase(args);
+          case 'codebase_search':
+            return await this.handleCodebaseSearch(args);
           case 'get_health_status':
             return await this.handleGetHealthStatus(args);
           case 'get_enhanced_stats':
@@ -982,7 +982,7 @@ class CodebaseIndexingServer {
     };
   }
 
-  private async handleSearchCodebase(args: any) {
+  private async handleCodebaseSearch(args: any) {
     const codebaseResult = await this.searchService.searchForCodeReferences({
       query: args.query as string,
       language: args.language as string,
@@ -995,10 +995,15 @@ class CodebaseIndexingServer {
     
     const referencesText = codebaseResult.references.map((ref, index) => {
       // Truncate snippet to prevent memory issues
-      const truncatedSnippet = ref.snippet.length > 150 
-        ? ref.snippet.substring(0, 150) + '...' 
+      const truncatedSnippet = ref.snippet.length > 200 
+        ? ref.snippet.substring(0, 200) + '...' 
         : ref.snippet;
-      return `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
+      
+      // Create navigation link
+      const navigationLink = `[📂 ${ref.path}:${ref.lines[0]}](file://${ref.path}#L${ref.lines[0]})`;
+      
+      return `### ${index + 1}. ${navigationLink}\n` +
+             `**Lines ${ref.lines[0]}-${ref.lines[1]}** | **${ref.chunkType}** | **${ref.language || 'text'}**${ref.score ? ` | **Similarity: ${(ref.score * 100).toFixed(1)}%**` : ''}\n\n` +
              `\`\`\`${ref.language || 'text'}\n${truncatedSnippet}\n\`\`\``;
     }).join('\n\n');
     
@@ -1006,16 +1011,17 @@ class CodebaseIndexingServer {
       content: [
         {
           type: 'text',
-          text: `🔍 **Enhanced Codebase Search Results** for "${args.query}"\n\n` +
-                `📊 **Search Metadata:**\n` +
-                `- Total results: ${codebaseResult.metadata.totalResults}\n` +
-                `- Search time: ${codebaseResult.metadata.searchTime}ms\n` +
-                `- Cache hit: ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
-                `- Hybrid search: ${codebaseResult.metadata.hybridUsed ? '✅' : '❌'}\n` +
-                `- LLM re-ranked: ${codebaseResult.metadata.reranked ? '✅' : '❌'}\n` +
-                `- Truncated: ${codebaseResult.truncated ? '⚠️ Yes' : '✅ No'}\n` +
-                (codebaseResult.summary ? `- Summary: ${codebaseResult.summary}\n` : '') +
-                `\n📝 **Code References:**\n\n${referencesText}`
+          text: `# 🔍 Natural Language Codebase Search\n\n` +
+                `**Query:** "${args.query}"\n\n` +
+                `## 📊 Search Results\n` +
+                `- **Found:** ${codebaseResult.metadata.totalResults} relevant code references\n` +
+                `- **Search Time:** ${codebaseResult.metadata.searchTime}ms\n` +
+                `- **Cache Hit:** ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
+                `- **Hybrid Search:** ${codebaseResult.metadata.hybridUsed ? '✅ (Dense + Sparse)' : '❌'}\n` +
+                `- **LLM Re-ranked:** ${codebaseResult.metadata.reranked ? '✅ (Relevance optimized)' : '❌'}\n` +
+                `- **Results:** ${codebaseResult.truncated ? '⚠️ Truncated for context window' : '✅ Complete'}\n` +
+                (codebaseResult.summary ? `\n**AI Summary:** ${codebaseResult.summary}\n` : '') +
+                `\n## 📝 Code References with Navigation Links\n\n${referencesText}`
         }
       ]
     };

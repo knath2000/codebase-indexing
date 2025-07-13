@@ -363,7 +363,7 @@ Sign up at [Qdrant Cloud](https://cloud.qdrant.io/) and get your API key and URL
 
 ### 🛠️ MCP Tools
 
-The server provides **12 powerful tools** organized by functionality:
+The server provides **16 powerful tools** organized by functionality:
 
 <details>
 <summary><strong>📁 Indexing Tools (5 tools)</strong></summary>
@@ -377,8 +377,9 @@ The server provides **12 powerful tools** organized by functionality:
 </details>
 
 <details>
-<summary><strong>🔍 Search Tools (5 tools)</strong></summary>
+<summary><strong>🔍 Search Tools (6 tools)</strong></summary>
 
+- **`codebase_search`**: 🌟 **Natural language search** for codebase understanding (e.g., "How is user authentication handled?", "Database connection setup", "Error handling patterns")
 - **`search_code`**: Search for code chunks using semantic similarity
 - **`search_functions`**: Search for functions by name or description
 - **`search_classes`**: Search for classes by name or description
@@ -388,10 +389,14 @@ The server provides **12 powerful tools** organized by functionality:
 </details>
 
 <details>
-<summary><strong>📊 Statistics Tools (2 tools)</strong></summary>
+<summary><strong>📊 Statistics & Health Tools (5 tools)</strong></summary>
 
 - **`get_indexing_stats`**: Get statistics about the indexed codebase
 - **`get_search_stats`**: Get statistics about the search index
+- **`get_enhanced_stats`**: Get enhanced statistics including cache and hybrid search metrics
+- **`get_health_status`**: Get comprehensive health status of all services
+- **`clear_search_cache`**: Clear search cache for fresh results
+- **`invalidate_file_cache`**: Invalidate cache for a specific file
 
 </details>
 
@@ -407,7 +412,20 @@ The server provides **12 powerful tools** organized by functionality:
 }
 ```
 
-2. **Search for authentication functions**:
+2. **🌟 Natural language codebase search**:
+```json
+{
+  "tool": "codebase_search",
+  "arguments": {
+    "query": "How is user authentication handled?",
+    "limit": 5,
+    "enable_hybrid": true,
+    "enable_reranking": true
+  }
+}
+```
+
+3. **Search for authentication functions**:
 ```json
 {
   "tool": "search_functions",
@@ -429,6 +447,53 @@ The server provides **12 powerful tools** organized by functionality:
     "threshold": 0.7
   }
 }
+```
+
+### 🌟 Natural Language Search Examples
+
+The `codebase_search` tool understands natural language queries and provides:
+- **Relevant code snippets** with syntax highlighting
+- **File paths with line numbers** for direct navigation
+- **Similarity scores** as percentages
+- **Clickable navigation links** to jump to specific locations
+
+**Example queries that work great:**
+- `"How is user authentication handled?"`
+- `"Database connection setup"`
+- `"Error handling patterns"`
+- `"API endpoint definitions"`
+- `"Component state management"`
+- `"Configuration loading"`
+- `"Logging implementation"`
+
+**Sample output format:**
+```markdown
+# 🔍 Natural Language Codebase Search
+
+**Query:** "How is user authentication handled?"
+
+## 📊 Search Results
+- **Found:** 8 relevant code references
+- **Search Time:** 45ms
+- **Hybrid Search:** ✅ (Dense + Sparse)
+- **LLM Re-ranked:** ✅ (Relevance optimized)
+
+## 📝 Code References with Navigation Links
+
+### 1. [📂 src/auth/auth-service.ts:15](file://src/auth/auth-service.ts#L15)
+**Lines 15-28** | **function** | **typescript** | **Similarity: 94.2%**
+
+```typescript
+async authenticateUser(token: string): Promise<User | null> {
+  try {
+    const decoded = jwt.verify(token, this.secretKey);
+    return await this.userRepository.findById(decoded.userId);
+  } catch (error) {
+    logger.error('Authentication failed:', error);
+    return null;
+  }
+}
+```
 ```
 
 ## 🌐 Supported Languages
