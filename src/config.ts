@@ -116,7 +116,9 @@ export function loadConfig(): Config {
       '.md', '.txt', '.json', '.yaml', '.yml',
       '.html', '.css', '.scss', '.less'
     ],
-    llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '45000')
+    llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '45000'),
+    keywordSearchTimeoutMs: parseInt(process.env.KEYWORD_SEARCH_TIMEOUT_MS || '10000'),
+    keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000')
   };
 
   // Validate configuration
@@ -178,6 +180,13 @@ export function validateConfig(config: Config): void {
     console.warn(`Warning: Embedding model '${config.embeddingModel}' may not be supported`);
   }
 
+  if (config.keywordSearchTimeoutMs < 1000) {
+    throw new Error('Keyword search timeout must be at least 1000 ms');
+  }
+  if (config.keywordSearchMaxChunks <= 0) {
+    throw new Error('Keyword search max chunks must be greater than 0');
+  }
+
   // Privacy validation logging
   console.log(`🔒 Privacy Settings Validated:`);
   console.log(`   - Chunk Size: ${config.chunkSize} chars (100-1000 range)`);
@@ -200,4 +209,6 @@ export function printConfigSummary(config: Config): void {
   console.log(`  Supported Extensions: ${config.supportedExtensions.join(', ')}`);
   console.log(`  LLM Reranker Timeout: ${config.llmRerankerTimeoutMs} ms`);
   console.log(`  Exclude Patterns: ${config.excludePatterns.join(', ')}`);
+  console.log(`  Keyword Search Timeout: ${config.keywordSearchTimeoutMs} ms`);
+  console.log(`  Keyword Search Max Chunks: ${config.keywordSearchMaxChunks}`);
 } 

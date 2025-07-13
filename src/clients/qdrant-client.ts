@@ -3,14 +3,30 @@ import { EmbeddingVector, EmbeddingPayload, SearchQuery, SearchResult, CodeChunk
 
 export class QdrantVectorClient {
   private client: QdrantClient;
+  private url: string;
+  private apiKey: string | undefined;
   private collectionName: string;
   private embeddingDimension: number;
+  private keywordTimeoutMs: number;
+  private keywordMaxChunks: number;
 
-  constructor(url: string, apiKey?: string, collectionName: string = 'codebase', embeddingDimension: number = 1536) {
-    const clientConfig = apiKey ? { url, apiKey } : { url };
-    this.client = new QdrantClient(clientConfig);
+  constructor(
+    url: string,
+    apiKey: string | undefined,
+    collectionName: string,
+    embeddingDimension: number,
+    keywordTimeoutMs: number = 10000,
+    keywordMaxChunks: number = 20000
+  ) {
+    this.url = url;
+    this.apiKey = apiKey;
     this.collectionName = collectionName;
     this.embeddingDimension = embeddingDimension;
+
+    const clientOptions: any = this.apiKey ? { url: this.url, apiKey: this.apiKey } : { url: this.url };
+    this.client = new QdrantClient(clientOptions);
+    this.keywordTimeoutMs = keywordTimeoutMs;
+    this.keywordMaxChunks = keywordMaxChunks;
   }
 
   /**
@@ -334,6 +350,9 @@ export class QdrantVectorClient {
       return [];
     }
 
+    const startTime = Date.now();
+    let scanned = 0;
+
     // Collect all chunks (streaming in pages of 1000) – this is OK for <50k chunks
     const pageLimit = 1000;
     let offset: string | undefined = undefined;
@@ -351,6 +370,15 @@ export class QdrantVectorClient {
         page.points.forEach(point => {
           allPoints.push({ id: point.id as string | number, payload: point.payload as unknown as EmbeddingPayload });
         });
+        scanned += page.points.length;
+        if (Date.now() - startTime > this.keywordTimeoutMs) {
+          console.warn(`[Qdrant] keywordSearch timeout after ${this.keywordTimeoutMs} ms, stopping scroll early (scanned ${scanned} points)`);
+          break;
+        }
+        if (scanned >= this.keywordMaxChunks) {
+          console.warn(`[Qdrant] keywordSearch reached max chunk limit (${this.keywordMaxChunks}), stopping scroll`);
+          break;
+        }
         offset = page.next_page_offset as string | undefined;
       } while (offset !== undefined);
     } catch (error) {
