@@ -4,11 +4,13 @@ export class LLMRerankerService {
   private apiKey: string | undefined;
   private model: string;
   private enabled: boolean;
-
+  private timeoutMs: number;
+  
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
     this.model = config.llmRerankerModel;
     this.enabled = config.enableLLMReranking && !!this.apiKey;
+    this.timeoutMs = config.llmRerankerTimeoutMs;
     
     if (config.enableLLMReranking && !this.apiKey) {
       console.warn('LLM re-ranking is enabled but no API key provided. Re-ranking will be disabled.');
@@ -74,6 +76,7 @@ export class LLMRerankerService {
   private buildRerankingPrompt(request: LLMRerankerRequest): string {
     const candidates = request.candidates.map((result, index) => {
       const metadata = result.chunk.metadata;
+      const snippet = result.snippet.length > 120 ? result.snippet.slice(0, 120) + '…' : result.snippet;
       return `
 CANDIDATE ${index + 1}:
 File: ${result.chunk.filePath}
@@ -86,7 +89,7 @@ Similarity Score: ${result.score.toFixed(3)}
 Is Test File: ${metadata.isTest ? 'Yes' : 'No'}
 Code Snippet:
 \`\`\`${result.chunk.language}
-${result.snippet}
+${snippet}
 \`\`\`
 `;
     }).join('\n');
@@ -135,66 +138,80 @@ JSON Response:`;
   }
 
   /**
-   * Call Anthropic Claude API
+   * Call Anthropic Claude API with timeout
    */
   private async callAnthropicAPI(prompt: string): Promise<string> {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey!,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: 1000,
-        temperature: 0.1,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey!,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 400,
+          temperature: 0.1,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        }),
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      return data.content[0].text;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await response.json() as any;
-    return data.content[0].text;
   }
 
   /**
-   * Call OpenAI GPT API
+   * Call OpenAI GPT API with timeout
    */
   private async callOpenAIAPI(prompt: string): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey!}`
-      },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: 1000,
-        temperature: 0.1,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey!}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          max_tokens: 400,
+          temperature: 0.1,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        }),
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json() as any;
+      return data.choices[0].message.content;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await response.json() as any;
-    return data.choices[0].message.content;
   }
 
   /**

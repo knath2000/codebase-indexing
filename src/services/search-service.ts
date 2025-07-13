@@ -169,8 +169,8 @@ export class SearchService {
         
         const rerankerRequest: LLMRerankerRequest = {
           query: query.query,
-          candidates: finalResults.slice(0, 20), // Limit candidates for re-ranking
-          maxResults: query.limit || 10
+          candidates: finalResults.slice(0, 10), // Limit candidates for re-ranking to reduce latency
+          maxResults: Math.min(query.limit || 10, 10)
         };
         
         const rerankerResponse = await this.llmReranker.rerank(rerankerRequest);

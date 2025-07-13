@@ -115,7 +115,8 @@ export function loadConfig(): Config {
       '.rb', '.swift', '.kt', '.scala',
       '.md', '.txt', '.json', '.yaml', '.yml',
       '.html', '.css', '.scss', '.less'
-    ]
+    ],
+    llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '45000')
   };
 
   // Validate configuration
@@ -165,6 +166,10 @@ export function validateConfig(config: Config): void {
     throw new Error('Max file size must be greater than 0');
   }
 
+  if (config.llmRerankerTimeoutMs < 10000) {
+    throw new Error('LLM reranker timeout must be at least 10000 ms');
+  }
+
   if (!config.supportedExtensions.length) {
     throw new Error('At least one supported extension must be specified');
   }
@@ -193,5 +198,6 @@ export function printConfigSummary(config: Config): void {
   console.log(`  Chunk Size: ${config.chunkSize}`);
   console.log(`  Max File Size: ${config.maxFileSize} bytes`);
   console.log(`  Supported Extensions: ${config.supportedExtensions.join(', ')}`);
+  console.log(`  LLM Reranker Timeout: ${config.llmRerankerTimeoutMs} ms`);
   console.log(`  Exclude Patterns: ${config.excludePatterns.join(', ')}`);
 } 
