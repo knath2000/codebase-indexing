@@ -1,16 +1,17 @@
-# Use Node.js 20 Alpine image for smaller size
-FROM node:20-alpine
+# Use Node.js 20 Slim image for glibc compatibility
+FROM node:20-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including tree-sitter requirements
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    git \
-    libc6-compat
+# Install system dependencies including tree-sitter requirements for Debian
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3 \
+      make \
+      g++ \
+      git \
+ && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
@@ -36,9 +37,9 @@ RUN node -e "console.log('Testing tree-sitter imports...'); \
 # Remove dev dependencies to reduce image size, but keep build tools for tree-sitter
 RUN npm prune --omit=dev --legacy-peer-deps
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S mcp -u 1001
+# Create non-root user for Debian
+RUN groupadd -g 1001 nodejs \
+ && useradd -u 1001 -g nodejs -s /usr/sbin/nologin mcp
 
 # Change ownership of the app directory
 RUN chown -R mcp:nodejs /app
