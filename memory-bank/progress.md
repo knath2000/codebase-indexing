@@ -99,6 +99,28 @@
 - [x] **Build Fix**: Resolved `tree-sitter-markdown` native module build error during `npm ci`
 - [x] **Deployment**: Triggered new deployment via Git commit
 
+### ✅ COMPLETED: LLM Reranker Latency Reduction & Timeout Prevention
+- [x] **Configurable Timeout**: Added `llmRerankerTimeoutMs` (default 25s) for API calls
+- [x] **Dynamic Timeout Calculation**: LLM calls respect overall request time budget
+- [x] **Reduced Candidate Limit**: Only top 10 candidates sent for re-ranking
+- [x] **Snippet Truncation**: Snippets in prompts truncated to 120 characters
+- [x] **Early Exit**: LLM re-ranking skipped if overall timeout is approaching
+
+### ✅ COMPLETED: Qdrant Keyword Search Timeout & Chunk Limits
+- [x] **Configurable Limits**: Added `keywordSearchTimeoutMs` (10s) and `keywordSearchMaxChunks` (20k)
+- [x] **Scroll Termination**: Keyword search stops early if timeout or max chunks reached
+- [x] **Performance Optimization**: Prevents long-running sparse searches from timing out MCP calls
+
+### ✅ COMPLETED: Strict Optional Types Compliance & Build Fixes
+- [x] **Exact Optional Property Types**: Refactored `SearchQuery` construction with conditional spreading
+- [x] **Type Definitions**: Updated `SearchQuery` properties to `Type` instead of `Type | undefined`
+- [x] **Property Accesses**: Corrected access to `topLanguages` and `topChunkTypes` in `SearchStats`
+- [x] **`getChunkById`**: Fixed optional property assignment in `CodeChunk` construction
+- [x] **`getServiceStatus`**: Fixed reference to `getServiceStatus` in `handleGetEnhancedStats`
+- [x] **`createPayloadIndexes`**: Fixed `args.force` access
+- [x] **`getChunkTypeIcon`**: Added missing helper method and updated usages
+- [x] **Clean Build**: Resolved all TypeScript errors related to `exactOptionalPropertyTypes`
+
 ## 📋 Planned Features (Short-term)
 
 ### Core Cursor Parity Features

@@ -117,9 +117,8 @@ async function ensureServicesInitialized(): Promise<void> {
 // Expose ensureServicesInitialized globally for tool handlers
 (globalThis as any).ensureServicesInitialized = ensureServicesInitialized;
 
-// Send SSE event helper
-function sendSSEEvent(res: Response, event: string, data: any) {
-  res.write(`event: ${event}\n`);
+// Send SSE event helper for JSON-RPC messages
+function sendSSEEvent(res: Response, data: any) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
@@ -148,50 +147,32 @@ app.get('/mcp', async (_req: Request, res: Response) => {
       'Access-Control-Allow-Headers': 'Cache-Control'
     });
     
-    // Send server info event
-    sendSSEEvent(res, 'server_info', {
-      name: 'codebase-indexing-server',
-      version: '1.0.0',
-      capabilities: {
-        methods: ['initialize', 'tools/list', 'tools/call'],
-        tools: true,
-        streaming: true
-      },
-      status: 'ready',
-      protocolVersion: '2024-11-05'
-    });
-    
-    // Send session created event
-    sendSSEEvent(res, 'session_created', {
-      session_id: sessionId
-    });
-    
-    // Send initial heartbeat
-    sendSSEEvent(res, 'heartbeat', {
-      timestamp: Date.now() / 1000
-    });
-    
     console.log(`SSE connection established with session: ${sessionId}`);
     
-    // Set up heartbeat interval
-    const heartbeatInterval = setInterval(() => {
+    // Keep connection alive with periodic comments (standard SSE keepalive)
+    const keepAliveInterval = setInterval(() => {
       if (res.destroyed) {
-        clearInterval(heartbeatInterval);
+        clearInterval(keepAliveInterval);
         activeSessions.delete(sessionId);
         return;
       }
       
       session.lastHeartbeat = new Date();
-      sendSSEEvent(res, 'heartbeat', {
-        timestamp: Date.now() / 1000
-      });
-    }, 30000); // Send heartbeat every 30 seconds
+      // Send comment to keep connection alive (standard SSE practice)
+      res.write(': keepalive\n\n');
+    }, 30000); // Send keepalive every 30 seconds
     
     // Handle client disconnect
     res.on('close', () => {
-      clearInterval(heartbeatInterval);
+      clearInterval(keepAliveInterval);
       activeSessions.delete(sessionId);
       console.log(`SSE connection closed for session: ${sessionId}`);
+    });
+    
+    res.on('error', (error) => {
+      console.error(`SSE connection error for session ${sessionId}:`, error);
+      clearInterval(keepAliveInterval);
+      activeSessions.delete(sessionId);
     });
     
   } catch (error) {
@@ -209,9 +190,12 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
       throw new Error('MCP server not initialized');
     }
     
+    console.log('Received POST request body:', JSON.stringify(req.body, null, 2));
+    
     const { jsonrpc, id, method, params } = req.body;
     
     if (jsonrpc !== '2.0') {
+      console.error(`Invalid JSON-RPC version: ${jsonrpc}`);
       res.status(400).json({
         jsonrpc: '2.0',
         id,
@@ -223,7 +207,7 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
       return;
     }
     
-    console.log(`Received JSON-RPC request: ${method}`);
+    console.log(`Processing JSON-RPC request: ${method} (id: ${id})`);
     
     try {
       let result;
@@ -290,36 +274,44 @@ app.post('/mcp', async (req: Request, res: Response): Promise<void> => {
           return;
       }
       
-      res.json({
+      const response = {
         jsonrpc: '2.0',
         id,
         result
-      });
+      };
+      
+      console.log(`Sending JSON-RPC response for ${method} (id: ${id}):`, JSON.stringify(response, null, 2));
+      res.json(response);
       
       return;
       
     } catch (error) {
-      console.error(`Error handling ${method}:`, error);
-      res.status(500).json({
+      console.error(`Error handling ${method} (id: ${id}):`, error);
+      const errorResponse = {
         jsonrpc: '2.0',
         id,
         error: {
           code: -32000,
           message: error instanceof Error ? error.message : 'Internal error'
         }
-      });
+      };
+      console.log('Sending error response:', JSON.stringify(errorResponse, null, 2));
+      res.status(500).json(errorResponse);
     }
     
   } catch (error) {
     console.error('Failed to handle JSON-RPC request:', error);
-    res.status(500).json({
+    console.error('Request body was:', JSON.stringify(req.body, null, 2));
+    const errorResponse = {
       jsonrpc: '2.0',
       id: req.body?.id || null,
       error: {
         code: -32000,
         message: 'Internal server error'
       }
-    });
+    };
+    console.log('Sending critical error response:', JSON.stringify(errorResponse, null, 2));
+    res.status(500).json(errorResponse);
     return;
   }
 });

@@ -188,3 +188,37 @@
 - General pattern: Native Node.js module compilation issues with Alpine due to `musl` toolchain vs. `glibc` toolchain.
 - Dockerfile best practices: Adjusting commands for different Linux distributions (Alpine vs. Debian) when changing base images.
 --- 
+
+---
+**Date:** 2025-07-13
+**TaskRef:** "Performance Optimization & TypeScript Strictness Fixes"
+
+**Learnings:**
+- Successfully optimized LLM reranker and Qdrant keyword search to prevent MCP timeouts.
+- Implemented dynamic timeout mechanisms to ensure API calls respect overall request budgets.
+- Resolved persistent TypeScript `exactOptionalPropertyTypes` errors through careful conditional property assignment.
+- Gained deeper understanding of `SearchQuery` and `SearchStats` interfaces for accurate data representation.
+- Confirmed that even minor type strictness issues can halt deployments in a production environment.
+
+**Key Implementation Details:**
+- **LLM Reranker**: Configurable `llmRerankerTimeoutMs` (default 25s), dynamic timeout in `callLLMAPI`, reduced `max_tokens` to 400, snippet truncation to 120 chars, and limited re-ranking candidates to 10.
+- **Qdrant Keyword Search**: Added `keywordSearchTimeoutMs` (10s) and `keywordSearchMaxChunks` (20k) to `Config`, implemented early scroll termination in `keywordSearch` to prevent long-running operations.
+- **TypeScript Fixes**: 
+  - `SearchQuery` properties updated from `Type | undefined` to `Type?`.
+  - `buildSearchQuery` helper modified to use conditional spreading (`...(prop !== undefined ? { prop } : {})`) for all optional properties.
+  - Corrected `languageDistribution` and `chunkTypeDistribution` references to `topLanguages` and `topChunkTypes` in `handleGetSearchStats`.
+  - Fixed `getChunkById` to properly assign optional properties using conditional spreading.
+  - Corrected `createPayloadIndexes` argument access (`_args.force`).
+  - Implemented `getChunkTypeIcon` helper to resolve `this` implicit any error and added appropriate icon mappings.
+
+**Successes:**
+- Eliminated all TypeScript compilation errors, achieving a clean build.
+- Addressed performance bottlenecks that were causing MCP request timeouts.
+- Ensured robust data typing and improved code maintainability.
+- The system is now more resilient to slow external API responses and large data sets during keyword search.
+
+**Improvements_Identified_For_Consolidation:**
+- Importance of granular timing instrumentation (`console.time`/`timeEnd`) for identifying performance bottlenecks.
+- Best practices for handling `exactOptionalPropertyTypes` in TypeScript for robust type safety.
+- Strategies for degrading gracefully when external API calls exceed time limits.
+--- 

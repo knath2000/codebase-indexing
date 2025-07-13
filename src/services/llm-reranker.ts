@@ -9,7 +9,7 @@ export class LLMRerankerService {
   private errorCount: number = 0;
   private totalRequests: number = 0;
   private maxDurationsToStore: number = 100; // Store up to 100 durations
-  
+
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
     this.model = config.llmRerankerModel;
@@ -213,35 +213,35 @@ JSON Response:`;
     try {
       console.log(`[LLMReranker] Calling Anthropic API with timeout ${timeoutMs}ms...`);
       const apiCallStartTime = Date.now();
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey!,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: this.model,
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey!,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: this.model,
           max_tokens: 400,
-          temperature: 0.1,
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ]
+        temperature: 0.1,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
         }),
         signal: controller.signal
-      });
+    });
 
-      if (!response.ok) {
-        throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
-      }
+    if (!response.ok) {
+      throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
+    }
 
-      const data = await response.json() as any;
+    const data = await response.json() as any;
       const apiCallDuration = Date.now() - apiCallStartTime;
       console.log(`[LLMReranker] Anthropic API call completed in ${apiCallDuration}ms`);
-      return data.content[0].text;
+    return data.content[0].text;
     } finally {
       clearTimeout(timeout);
     }
@@ -258,34 +258,34 @@ JSON Response:`;
     try {
       console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
       const apiCallStartTime = Date.now();
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey!}`
-        },
-        body: JSON.stringify({
-          model: this.model,
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey!}`
+      },
+      body: JSON.stringify({
+        model: this.model,
           max_tokens: 400,
-          temperature: 0.1,
-          messages: [
-            {
-              role: 'user',
-              content: prompt
-            }
-          ]
+        temperature: 0.1,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
         }),
         signal: controller.signal
-      });
+    });
 
-      if (!response.ok) {
-        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
-      }
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
 
-      const data = await response.json() as any;
+    const data = await response.json() as any;
       const apiCallDuration = Date.now() - apiCallStartTime;
       console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms`);
-      return data.choices[0].message.content;
+    return data.choices[0].message.content;
     } finally {
       clearTimeout(timeout);
     }

@@ -358,7 +358,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
         case 'search_code':
           const codeResults = await searchService.search(
             searchService.buildSearchQuery({
-              query: args.query as string,
+            query: args.query as string,
               ...(args.language !== undefined ? { language: args.language as string } : {}),
               ...(args.chunk_type !== undefined ? { chunkType: args.chunk_type as ChunkType } : {}),
               ...(args.file_path !== undefined ? { filePath: args.file_path as string } : {}),
@@ -545,7 +545,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
         case 'codebase_search':
           const codebaseSearchResults = await searchService.searchForCodeReferences(
             searchService.buildSearchQuery({
-              query: args.query as string,
+            query: args.query as string,
               ...(args.language !== undefined ? { language: args.language as string } : {}),
               ...(args.chunk_type !== undefined ? { chunkType: args.chunk_type as ChunkType } : {}),
               ...(args.file_path !== undefined ? { filePath: args.file_path as string } : {}),
@@ -823,7 +823,7 @@ class CodebaseIndexingServer {
           text: `Function search results for "${query}":\n\n` +
                 results.map((result: any, index: number) => 
                   `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
-                  `   ${result.context}\n` +
+                         `   ${result.context}\n` +
                   `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
                 ).join('\n\n')
         }
@@ -848,7 +848,7 @@ class CodebaseIndexingServer {
           text: `Class search results for "${query}":\n\n` +
                 results.map((result: any, index: number) => 
                   `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
-                  `   ${result.context}\n` +
+                         `   ${result.context}\n` +
                   `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
                 ).join('\n\n')
         }
@@ -887,16 +887,16 @@ class CodebaseIndexingServer {
     if (!codeContextResult) {
       return {
         content: [{
-          type: 'text',
-          text: `Chunk not found: ${chunk_id}`
+            type: 'text',
+            text: `Chunk not found: ${chunk_id}`
         }],
         isError: true
       };
     }
     return {
       content: [{
-        type: 'text',
-        text: `Code context for chunk "${chunk_id}":\n\n` +
+          type: 'text',
+          text: `Code context for chunk "${chunk_id}":\n\n` +
               `File: ${codeContextResult.chunk.filePath}\n` +
               `Lines: ${codeContextResult.chunk.startLine}-${codeContextResult.chunk.endLine}\n` +
               `Type: ${codeContextResult.chunk.chunkType}\n\n` +
@@ -909,8 +909,8 @@ class CodebaseIndexingServer {
     const indexingStats = this.indexingService.getStats();
     return {
       content: [{
-        type: 'text',
-        text: `Indexing Statistics:\n\n` +
+          type: 'text',
+          text: `Indexing Statistics:\n\n` +
               `Total files: ${indexingStats.totalFiles}\n` +
               `Total chunks: ${indexingStats.totalChunks}\n` +
               `Total size: ${indexingStats.totalSize} bytes\n` +
@@ -921,11 +921,11 @@ class CodebaseIndexingServer {
               `Warnings: ${indexingStats.warnings}\n` +
               `Largest file: ${indexingStats.largestFile}\n\n` +
               `Language distribution:\n${Object.entries(indexingStats.languageDistribution)
-                .map(([lang, count]) => `  ${lang}: ${count}`)
-                .join('\n')}\n\n` +
+                  .map(([lang, count]) => `  ${lang}: ${count}`)
+                  .join('\n')}\n\n` +
               `Chunk type distribution:\n${Object.entries(indexingStats.chunkTypeDistribution)
-                .map(([type, count]) => `  ${type}: ${count}`)
-                .join('\n')}`
+                  .map(([type, count]) => `  ${type}: ${count}`)
+                  .join('\n')}`
       }]
     };
   }
@@ -942,7 +942,7 @@ class CodebaseIndexingServer {
       .join('\n');
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Search Statistics:\n\n` +
               `Total queries: ${searchStats.totalQueries}\n` +
               `Average latency: ${searchStats.averageLatency.toFixed(2)}ms\n` +
@@ -961,7 +961,7 @@ class CodebaseIndexingServer {
     await this.indexingService.clearIndex();
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: 'Successfully cleared index'
       }]
     };
@@ -971,7 +971,7 @@ class CodebaseIndexingServer {
     await this.indexingService.removeFile(args.file_path as string);
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Successfully removed file: ${args.file_path}`
       }]
     };
@@ -981,7 +981,7 @@ class CodebaseIndexingServer {
     const reindexedChunks = await this.indexingService.reindexFile(args.file_path as string);
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Successfully re-indexed file: ${args.file_path}\nGenerated ${reindexedChunks.length} chunks`
       }]
     };
@@ -991,7 +991,7 @@ class CodebaseIndexingServer {
     await (this.searchService as any).qdrantClient.ensurePayloadIndexes(_args.force as boolean || false);
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: 'Successfully created payload indexes'
       }]
     };
@@ -1009,12 +1009,12 @@ class CodebaseIndexingServer {
       ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
       ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
     });
-
+    
     const { references, truncated, summary, metadata } = await this.searchService.searchForCodeReferences(searchQuery, max_tokens as number | undefined);
-
+    
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Codebase search results for "${query}":\n\n` +
               (summary ? `Summary: ${summary}\n\n` : '') +
               references.map((ref: any, index: number) => {
@@ -1047,7 +1047,7 @@ class CodebaseIndexingServer {
       .join('\n');
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Health Status: ${healthStatus.status}\n` +
               `Timestamp: ${healthStatus.timestamp.toISOString()}\n` +
               `Version: ${healthStatus.version}\n` +
@@ -1062,14 +1062,14 @@ class CodebaseIndexingServer {
     const enhancedStats = this.searchService.getEnhancedSearchStats();
     return {
       content: [{
-        type: 'text',
-        text: `📊 **Enhanced Search Statistics**\n\n` +
-              `**Search Performance:**\n` +
-              `- Total queries: ${enhancedStats.totalQueries}\n` +
-              `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
-              `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
-              `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
-              `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
+          type: 'text',
+          text: `📊 **Enhanced Search Statistics**\n\n` +
+                `**Search Performance:**\n` +
+                `- Total queries: ${enhancedStats.totalQueries}\n` +
+                `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
+                `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
+                `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
+                `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
               ``
       }]
     };
@@ -1079,7 +1079,7 @@ class CodebaseIndexingServer {
     this.searchService.clearCaches();
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: 'Successfully cleared search cache'
       }]
     };
@@ -1089,7 +1089,7 @@ class CodebaseIndexingServer {
     this.searchService.invalidateFileCache(args.file_path as string);
     return {
       content: [{
-        type: 'text',
+          type: 'text',
         text: `Successfully invalidated cache for file: ${args.file_path}`
       }]
     };

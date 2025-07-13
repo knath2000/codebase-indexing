@@ -7,10 +7,10 @@ WORKDIR /app
 # Install system dependencies including tree-sitter requirements for Debian
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      python3 \
-      make \
-      g++ \
-      git \
+    python3 \
+    make \
+    g++ \
+    git \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy package files

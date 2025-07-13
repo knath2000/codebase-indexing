@@ -236,5 +236,5 @@ if (chunkContent.length > MAX_CHUNK_SIZE) {
 - **Local Processing**: Code never sent to external services beyond embeddings
 - **Embedding Only**: Only vector representations stored, not source code
 - **Temporary Storage**: Minimal temporary file handling
-- **Access Logs**: Limited logging of sensitive information
+- **Access Logs**: Limited logging of sensitive information 
 - **Privacy Validation**: Startup logging confirms privacy settings 

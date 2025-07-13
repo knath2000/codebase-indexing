@@ -215,7 +215,7 @@ export class SearchService {
       const enableReranking = query.enableReranking ?? this.config.enableLLMReranking;
       const currentElapsedTime = Date.now() - requestStartTime;
       const overallTimeout = query.llmRerankerTimeoutMs || this.config.llmRerankerTimeoutMs || 50000; // Use LLM reranker timeout as proxy for overall RPC time
-
+      
       if (enableReranking && this.llmReranker.isEnabled() && finalResults.length > 1 && currentElapsedTime < overallTimeout) {
         this.searchStats.rerankedQueries++;
         
@@ -521,7 +521,7 @@ export class SearchService {
       // For now, we'll use aggregated stats from indexing service or cache if available
       const languageDistribution: Record<string, number> = {};
       const chunkTypeDistribution: Record<string, number> = {};
-
+      
       // Placeholder for actual distribution fetching logic
       // In a real scenario, this would involve Qdrant aggregations or iterating indexed metadata
 
@@ -547,7 +547,7 @@ export class SearchService {
         llmRerankerErrorRate: this.llmReranker.getErrorRate?.() ?? 0,
         qdrantClientLatency: this.qdrantClient.getAverageLatency?.() ?? 0,
       };
-
+      
     } catch (error) {
       console.error(`❌ [SearchService] Failed to gather search statistics:`, error);
       throw new Error(`SearchService failed to get search stats: ${String(error)}`);
