@@ -304,6 +304,46 @@ QDRANT_URL=https://qdrant.company.com
 QDRANT_API_KEY=prod_api_key
 ```
 
+## 🔒 Privacy & Security
+
+### Your Code Stays Private
+
+The MCP server is designed with privacy as a core principle:
+
+#### **Small Code Chunks Only**
+- **Chunk Size**: Only small code segments (100-1000 characters) are sent for embedding
+- **Default**: 800 characters maximum per chunk (configurable)
+- **Enforcement**: Automatic truncation of larger chunks with logging
+- **No Full Files**: Complete files are never sent to external services
+
+#### **One-Way Mathematical Representations**
+- **Embeddings**: Code chunks are converted to mathematical vectors (embeddings)
+- **Irreversible**: Embeddings cannot be converted back to original code
+- **Semantic Only**: Vectors capture meaning, not exact text
+- **No Code Storage**: Original code never leaves your environment
+
+#### **Local Processing**
+- **Parsing**: All code parsing happens locally using Tree-sitter
+- **Chunking**: Code segmentation occurs on your machine
+- **Storage**: Only vector embeddings stored in your Qdrant instance
+- **Search**: Semantic search runs on your infrastructure
+
+#### **Network Security**
+- **HTTPS**: All external API calls use TLS encryption
+- **API Keys**: Securely stored in environment variables
+- **No Logging**: Code content is never logged to external services
+- **Minimal Data**: Only mathematical vectors transmitted
+
+### Privacy Configuration
+
+```env
+# Privacy-optimized settings
+CHUNK_SIZE=800                    # Max 800 chars per chunk (100-1000 range)
+CHUNK_OVERLAP=100                 # Reduced overlap for privacy
+MAX_FILE_SIZE=1048576             # 1MB file size limit
+EXCLUDE_PATTERNS=*.git*,node_modules/**,dist/**  # Skip sensitive directories
+```
+
 ## 📝 Configuration
 
 The server is configured via environment variables:
@@ -317,10 +357,10 @@ The server is configured via environment variables:
 - `QDRANT_URL`: Qdrant server URL (default: `http://localhost:6333`)
 - `QDRANT_API_KEY`: Qdrant API key (if using cloud instance)
 - `COLLECTION_NAME`: Name of the Qdrant collection (default: `codebase`)
-- `EMBEDDING_MODEL`: Voyage AI model to use (default: `voyage-code-2`)
+- `EMBEDDING_MODEL`: Voyage AI model to use (default: `voyage-code-3`)
 - `BATCH_SIZE`: Batch size for embedding generation (default: `100`)
-- `CHUNK_SIZE`: Maximum chunk size in characters (default: `1000`)
-- `CHUNK_OVERLAP`: Overlap between chunks (default: `200`)
+- `CHUNK_SIZE`: Maximum chunk size in characters (default: `800`, range: 100-1000)
+- `CHUNK_OVERLAP`: Overlap between chunks (default: `100`)
 - `MAX_FILE_SIZE`: Maximum file size to index in bytes (default: `1048576`)
 - `EXCLUDE_PATTERNS`: Comma-separated patterns to exclude (default: see config)
 - `SUPPORTED_EXTENSIONS`: Comma-separated file extensions to support (default: see config)

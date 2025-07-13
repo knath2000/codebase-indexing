@@ -261,14 +261,29 @@ export class CodeParser {
   ): CodeChunk | null {
     const startLine = node.startPosition.row + 1;
     const endLine = node.endPosition.row + 1;
-    const chunkContent = node.text;
+    let chunkContent = node.text;
 
-    // Skip if chunk is too small or too large
+    // Privacy-focused chunk size enforcement (100-1000 characters)
+    const MIN_CHUNK_SIZE = 100;
+    const MAX_CHUNK_SIZE = 1000;
+
+    // Skip if chunk is too small
+    if (chunkContent.length < MIN_CHUNK_SIZE) {
+      return null;
+    }
+
+    // Truncate if chunk is too large (privacy protection)
+    if (chunkContent.length > MAX_CHUNK_SIZE) {
+      chunkContent = chunkContent.substring(0, MAX_CHUNK_SIZE);
+      console.log(`🔒 Privacy: Truncated chunk in ${filePath}:${startLine} to ${MAX_CHUNK_SIZE} chars`);
+    }
+
+    // Apply strategy-specific size limits (secondary validation)
     if (strategy.minSize && chunkContent.length < strategy.minSize) {
       return null;
     }
     if (strategy.maxSize && chunkContent.length > strategy.maxSize) {
-      return null;
+      chunkContent = chunkContent.substring(0, strategy.maxSize);
     }
 
     // Extract name if strategy provides name extractor
@@ -329,15 +344,29 @@ export class CodeParser {
     const chunkSize = 50; // Lines per chunk
     const overlap = 5;
 
+    // Privacy-focused chunk size enforcement
+    const MIN_CHUNK_SIZE = 100;
+    const MAX_CHUNK_SIZE = 1000;
+
     for (let i = 0; i < lines.length; i += chunkSize - overlap) {
       const chunkLines = lines.slice(i, i + chunkSize);
       const startLine = i + 1;
       const endLine = Math.min(i + chunkSize, lines.length);
       
-      const chunkContent = chunkLines.join('\n');
+      let chunkContent = chunkLines.join('\n');
       
       if (chunkContent.trim().length === 0) {
         continue;
+      }
+
+      // Privacy protection: enforce size limits
+      if (chunkContent.length < MIN_CHUNK_SIZE) {
+        continue; // Skip chunks that are too small
+      }
+
+      if (chunkContent.length > MAX_CHUNK_SIZE) {
+        chunkContent = chunkContent.substring(0, MAX_CHUNK_SIZE);
+        console.log(`🔒 Privacy: Truncated generic chunk in ${filePath}:${startLine} to ${MAX_CHUNK_SIZE} chars`);
       }
 
       const metadata: ChunkMetadata = {
@@ -520,6 +549,20 @@ export class CodeParser {
     name: string,
     fullContent: string
   ): CodeChunk {
+    // Privacy-focused chunk size enforcement
+    const MIN_CHUNK_SIZE = 100;
+    const MAX_CHUNK_SIZE = 1000;
+
+    // Skip if content is too small
+    if (content.length < MIN_CHUNK_SIZE) {
+      return null as any; // This will be filtered out
+    }
+
+    // Truncate if content is too large (privacy protection)
+    if (content.length > MAX_CHUNK_SIZE) {
+      content = content.substring(0, MAX_CHUNK_SIZE);
+      console.log(`🔒 Privacy: Truncated markdown chunk in ${filePath}:${startLine} to ${MAX_CHUNK_SIZE} chars`);
+    }
     const metadata: ChunkMetadata = {
       fileSize: fullContent.length,
       lastModified: Date.now(),

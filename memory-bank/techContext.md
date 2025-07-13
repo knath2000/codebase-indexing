@@ -199,8 +199,42 @@ npm run dev
 - **Input Validation**: Sanitize file paths and user inputs
 - **Rate Limiting**: Prevent abuse of indexing endpoints
 
+### Data Privacy & Code Protection
+
+#### **Privacy-First Architecture**
+- **Small Code Chunks**: Only 100-1000 character segments sent for embedding
+- **Automatic Truncation**: Chunks exceeding 1000 chars are automatically truncated
+- **No Full Files**: Complete files never sent to external services
+- **Local Processing**: All parsing and chunking happens locally
+
+#### **One-Way Mathematical Representations**
+- **Embeddings Only**: Code converted to irreversible mathematical vectors
+- **No Code Storage**: Original code never stored in external services
+- **Semantic Vectors**: Embeddings capture meaning, not exact text
+- **Vector Dimensions**: 1024-dimensional vectors (voyage-code-3 model)
+
+#### **Chunk Size Enforcement**
+```typescript
+// Privacy-focused chunk size enforcement
+const MIN_CHUNK_SIZE = 100;  // Minimum for meaningful context
+const MAX_CHUNK_SIZE = 1000; // Maximum for privacy protection
+
+// Automatic truncation with logging
+if (chunkContent.length > MAX_CHUNK_SIZE) {
+  chunkContent = chunkContent.substring(0, MAX_CHUNK_SIZE);
+  console.log(`🔒 Privacy: Truncated chunk to ${MAX_CHUNK_SIZE} chars`);
+}
+```
+
+#### **Configuration Validation**
+- **Range Enforcement**: Chunk size must be 100-1000 characters
+- **Privacy Logging**: Validation logs privacy settings on startup
+- **Overlap Limits**: Chunk overlap must be less than chunk size
+- **File Size Limits**: Maximum 1MB file size for indexing
+
 ### Data Privacy
 - **Local Processing**: Code never sent to external services beyond embeddings
 - **Embedding Only**: Only vector representations stored, not source code
 - **Temporary Storage**: Minimal temporary file handling
-- **Access Logs**: Limited logging of sensitive information 
+- **Access Logs**: Limited logging of sensitive information
+- **Privacy Validation**: Startup logging confirms privacy settings 

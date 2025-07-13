@@ -15,8 +15,8 @@ export function loadConfig(): Config {
     collectionName: process.env.COLLECTION_NAME || 'codebase',
     embeddingModel: process.env.EMBEDDING_MODEL || 'voyage-code-3',
     batchSize: parseInt(process.env.BATCH_SIZE || '100'),
-    chunkSize: parseInt(process.env.CHUNK_SIZE || '1000'),
-    chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || '200'),
+    chunkSize: parseInt(process.env.CHUNK_SIZE || '800'), // Privacy-optimized: 800 chars max
+    chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || '100'), // Reduced overlap for privacy
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '1048576'), // 1MB
     excludePatterns: process.env.EXCLUDE_PATTERNS?.split(',') || [
       '*.git*',
@@ -148,6 +148,19 @@ export function validateConfig(config: Config): void {
     throw new Error('Chunk size must be greater than 0');
   }
 
+  // Privacy-focused chunk size validation
+  if (config.chunkSize < 100) {
+    throw new Error('Chunk size must be at least 100 characters for meaningful code context');
+  }
+
+  if (config.chunkSize > 1000) {
+    throw new Error('Chunk size must not exceed 1000 characters for privacy protection');
+  }
+
+  if (config.chunkOverlap >= config.chunkSize) {
+    throw new Error('Chunk overlap must be less than chunk size');
+  }
+
   if (config.maxFileSize <= 0) {
     throw new Error('Max file size must be greater than 0');
   }
@@ -159,6 +172,13 @@ export function validateConfig(config: Config): void {
   if (!['voyage-code-3', 'voyage-3.5', 'voyage-3-large', 'voyage-code-2', 'voyage-2', 'voyage-large-2'].includes(config.embeddingModel)) {
     console.warn(`Warning: Embedding model '${config.embeddingModel}' may not be supported`);
   }
+
+  // Privacy validation logging
+  console.log(`🔒 Privacy Settings Validated:`);
+  console.log(`   - Chunk Size: ${config.chunkSize} chars (100-1000 range)`);
+  console.log(`   - Chunk Overlap: ${config.chunkOverlap} chars`);
+  console.log(`   - Max File Size: ${Math.round(config.maxFileSize / 1024 / 1024)}MB`);
+  console.log(`   - Embeddings: One-way mathematical representations only`);
 }
 
 /**

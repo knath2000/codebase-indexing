@@ -8,8 +8,8 @@ export const ConfigSchema = z.object({
   collectionName: z.string().default('codebase'),
   embeddingModel: z.enum(['voyage-code-3', 'voyage-3.5', 'voyage-3-large', 'voyage-code-2', 'voyage-2', 'voyage-large-2']).default('voyage-code-3'),
   batchSize: z.number().default(100),
-  chunkSize: z.number().default(1000),
-  chunkOverlap: z.number().default(200),
+  chunkSize: z.number().min(100).max(1000).default(800), // Privacy-enforced: 100-1000 chars
+  chunkOverlap: z.number().default(100), // Reduced for privacy
   maxFileSize: z.number().default(1024 * 1024), // 1MB
   excludePatterns: z.array(z.string()).default([
     '*.git*',
