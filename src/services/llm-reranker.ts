@@ -5,6 +5,10 @@ export class LLMRerankerService {
   private model: string;
   private enabled: boolean;
   private timeoutMs: number;
+  private requestDurations: number[] = []; // To store last N request durations
+  private errorCount: number = 0;
+  private totalRequests: number = 0;
+  private maxDurationsToStore: number = 100; // Store up to 100 durations
   
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
@@ -26,9 +30,68 @@ export class LLMRerankerService {
   }
 
   /**
+   * Test connection to LLM Reranker
+   */
+  async testConnection(): Promise<boolean> {
+    if (!this.enabled) {
+      return true; // Consider as connected if disabled by config
+    }
+    try {
+      const startTime = Date.now();
+      // Make a dummy request to test connectivity
+      await this.callLLMAPI('test', startTime);
+      this.addRequestDuration(Date.now() - startTime);
+      return true;
+    } catch (error) {
+      console.error('LLM Reranker connection test failed:', error);
+      this.errorCount++;
+      return false;
+    }
+  }
+
+  /**
+   * Get cache size (dummy for now as no cache is implemented in reranker)
+   */
+  cacheSize(): number {
+    return 0;
+  }
+
+  /**
+   * Get memory usage (dummy for now)
+   */
+  memoryUsage(): number {
+    return 0;
+  }
+
+  /**
+   * Get average request latency for LLM reranker
+   */
+  getAverageLatency(): number {
+    if (this.requestDurations.length === 0) {
+      return 0;
+    }
+    const sum = this.requestDurations.reduce((a, b) => a + b, 0);
+    return sum / this.requestDurations.length;
+  }
+
+  /**
+   * Get error rate for LLM reranker
+   */
+  getErrorRate(): number {
+    return this.totalRequests === 0 ? 0 : (this.errorCount / this.totalRequests) * 100;
+  }
+
+  private addRequestDuration(duration: number): void {
+    this.requestDurations.push(duration);
+    if (this.requestDurations.length > this.maxDurationsToStore) {
+      this.requestDurations.shift(); // Remove the oldest duration
+    }
+  }
+
+  /**
    * Re-rank search results using LLM for improved relevance
    */
-  async rerank(request: LLMRerankerRequest): Promise<LLMRerankerResponse> {
+  async rerank(request: LLMRerankerRequest, requestStartTime: number = Date.now()): Promise<LLMRerankerResponse> {
     if (!this.enabled) {
       // Return original results if re-ranking is disabled
       return {
@@ -39,18 +102,20 @@ export class LLMRerankerService {
     }
 
     try {
+      const rerankStartTime = Date.now();
       console.log(`🧠 [LLMReranker] Re-ranking ${request.candidates.length} results for query: "${request.query}"`);
       
       // Prepare the prompt for LLM re-ranking
       const prompt = this.buildRerankingPrompt(request);
       
       // Call the LLM API
-      const response = await this.callLLMAPI(prompt);
+      const response = await this.callLLMAPI(prompt, requestStartTime);
       
       // Parse the response and re-order results
       const rerankedResults = this.parseRerankingResponse(response, request.candidates, request.maxResults);
       
-      console.log(`✅ [LLMReranker] Re-ranked to ${rerankedResults.length} results`);
+      const rerankDuration = Date.now() - rerankStartTime;
+      console.log(`✅ [LLMReranker] Re-ranked to ${rerankedResults.length} results in ${rerankDuration}ms`);
       
       return {
         rerankedResults,
@@ -122,16 +187,16 @@ JSON Response:`;
   /**
    * Call the LLM API for re-ranking
    */
-  private async callLLMAPI(prompt: string): Promise<string> {
+  private async callLLMAPI(prompt: string, requestStartTime: number): Promise<string> {
     if (!this.apiKey) {
       throw new Error('No API key configured for LLM re-ranking');
     }
 
     // Support different LLM providers based on model name
     if (this.model.includes('claude')) {
-      return this.callAnthropicAPI(prompt);
+      return this.callAnthropicAPI(prompt, requestStartTime);
     } else if (this.model.includes('gpt')) {
-      return this.callOpenAIAPI(prompt);
+      return this.callOpenAIAPI(prompt, requestStartTime);
     } else {
       throw new Error(`Unsupported LLM model for re-ranking: ${this.model}`);
     }
@@ -140,10 +205,14 @@ JSON Response:`;
   /**
    * Call Anthropic Claude API with timeout
    */
-  private async callAnthropicAPI(prompt: string): Promise<string> {
+  private async callAnthropicAPI(prompt: string, requestStartTime: number): Promise<string> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
+    const timeoutMs = Math.max(1000, remainingTime);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      console.log(`[LLMReranker] Calling Anthropic API with timeout ${timeoutMs}ms...`);
+      const apiCallStartTime = Date.now();
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -170,6 +239,8 @@ JSON Response:`;
       }
 
       const data = await response.json() as any;
+      const apiCallDuration = Date.now() - apiCallStartTime;
+      console.log(`[LLMReranker] Anthropic API call completed in ${apiCallDuration}ms`);
       return data.content[0].text;
     } finally {
       clearTimeout(timeout);
@@ -179,10 +250,14 @@ JSON Response:`;
   /**
    * Call OpenAI GPT API with timeout
    */
-  private async callOpenAIAPI(prompt: string): Promise<string> {
+  private async callOpenAIAPI(prompt: string, requestStartTime: number): Promise<string> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
+    const timeoutMs = Math.max(1000, remainingTime);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
+      const apiCallStartTime = Date.now();
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -208,6 +283,8 @@ JSON Response:`;
       }
 
       const data = await response.json() as any;
+      const apiCallDuration = Date.now() - apiCallStartTime;
+      console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms`);
       return data.choices[0].message.content;
     } finally {
       clearTimeout(timeout);
@@ -287,9 +364,9 @@ JSON Response:`;
     return {
       enabled: this.enabled,
       model: this.model,
-      totalRequests: 0, // TODO: Implement request tracking
-      successRate: 0.95, // TODO: Implement success tracking
-      averageLatency: 500 // TODO: Implement latency tracking
+      totalRequests: this.totalRequests,
+      successRate: this.getErrorRate() === 0 ? 1 : 1 - (this.errorCount / this.totalRequests),
+      averageLatency: this.getAverageLatency()
     };
   }
 } 

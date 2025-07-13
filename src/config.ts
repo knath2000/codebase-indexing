@@ -116,7 +116,7 @@ export function loadConfig(): Config {
       '.md', '.txt', '.json', '.yaml', '.yml',
       '.html', '.css', '.scss', '.less'
     ],
-    llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '45000'),
+    llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '25000'),
     keywordSearchTimeoutMs: parseInt(process.env.KEYWORD_SEARCH_TIMEOUT_MS || '10000'),
     keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000')
   };

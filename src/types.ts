@@ -151,24 +151,23 @@ export interface EmbeddingPayload {
   contentHash: string;
   tokenCount: number;
   astNodeType?: string;
+  parentChunkId?: string;
+  childChunkIds?: string[];
+  complexity?: number;
   [key: string]: unknown;
 }
 
 // Enhanced search types
 export interface SearchQuery {
   query: string;
-  language?: string | undefined;
-  filePath?: string | undefined;
-  chunkType?: ChunkType | undefined;
-  limit?: number | undefined;
-  threshold?: number | undefined;
-  includeMetadata?: boolean | undefined;
-  // New search options
+  language?: string;
+  chunkType?: ChunkType;
+  filePath?: string;
+  limit?: number;
+  threshold?: number;
   enableHybrid?: boolean;
   enableReranking?: boolean;
-  contextBudget?: number; // max tokens to return
-  boostRecentFiles?: boolean;
-  boostOpenFiles?: boolean;
+  llmRerankerTimeoutMs?: number; // Optional per-query override
 }
 
 // Cursor-style code reference format
@@ -347,6 +346,17 @@ export interface SearchStats {
   topChunkTypes: Record<string, number>;
   errorRate: number;
   lastQuery: Date;
+  totalChunks: number; // Add this line
+  embeddingModel: string;
+  embeddingDimension: number;
+  collectionStatus: string;
+  searchCacheSize: number;
+  searchCacheMemory: number;
+  rerankerCacheSize: number;
+  rerankerCacheMemory: number;
+  llmRerankerAverageLatency: number;
+  llmRerankerErrorRate: number;
+  qdrantClientLatency: number;
 }
 
 // Health check types
@@ -370,7 +380,7 @@ export interface HealthStatus {
 }
 
 export interface ServiceHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy';
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'disabled'; // Add 'disabled'
   latency?: number;
   errorRate?: number;
   lastCheck: Date;

@@ -356,14 +356,19 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'search_code':
-          const codeResults = await searchService.search({
-            query: args.query as string,
-            language: args.language as string,
-            chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
-            filePath: args.file_path as string,
-            limit: args.limit as number,
-            threshold: args.threshold as number
-          });
+          const codeResults = await searchService.search(
+            searchService.buildSearchQuery({
+              query: args.query as string,
+              ...(args.language !== undefined ? { language: args.language as string } : {}),
+              ...(args.chunk_type !== undefined ? { chunkType: args.chunk_type as ChunkType } : {}),
+              ...(args.file_path !== undefined ? { filePath: args.file_path as string } : {}),
+              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
+              ...(args.threshold !== undefined ? { threshold: args.threshold as number } : {}),
+              ...(args.enable_hybrid !== undefined ? { enableHybrid: args.enable_hybrid as boolean } : {}),
+              ...(args.enable_reranking !== undefined ? { enableReranking: args.enable_reranking as boolean } : {}),
+              ...(args.llm_reranker_timeout_ms !== undefined ? { llmRerankerTimeoutMs: args.llm_reranker_timeout_ms as number } : {}),
+            })
+          );
           return {
             content: [{
               type: 'text',
@@ -375,7 +380,14 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'search_functions':
-          const functionResults = await searchService.searchFunctions(args.query as string, args.language as string, args.limit as number);
+          const functionResults = await searchService.searchFunctions(
+            searchService.buildSearchQuery({
+              query: args.query as string,
+              ...(args.language !== undefined ? { language: args.language as string } : {}),
+              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
+              chunkType: ChunkType.FUNCTION,
+            })
+          );
           return {
             content: [{
               type: 'text',
@@ -387,7 +399,14 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'search_classes':
-          const classResults = await searchService.searchClasses(args.query as string, args.language as string, args.limit as number);
+          const classResults = await searchService.searchClasses(
+            searchService.buildSearchQuery({
+              query: args.query as string,
+              ...(args.language !== undefined ? { language: args.language as string } : {}),
+              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
+              chunkType: ChunkType.CLASS,
+            })
+          );
           return {
             content: [{
               type: 'text',
@@ -399,7 +418,12 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'find_similar':
-          const similarResults = await searchService.findSimilar(args.chunk_id as string, args.limit as number);
+          const similarResults = await searchService.findSimilar(
+            searchService.buildSearchQuery({
+              query: args.chunk_id as string,
+              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
+            })
+          );
           return {
             content: [{
               type: 'text',
@@ -411,43 +435,75 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'get_code_context':
-          const contextResult = await searchService.getCodeContext(args.chunk_id as string, args.context_lines as number || 5);
-          if (!contextResult) {
+          const codeContextResult = await searchService.getCodeContext(
+            args.chunk_id as string,
+            args.context_lines as number | undefined
+          );
+          if (!codeContextResult) {
             return {
               content: [{
                 type: 'text',
-                text: `Chunk "${args.chunk_id}" not found`
-              }]
+                text: `Chunk not found: ${args.chunk_id}`
+              }],
+              isError: true
             };
           }
           return {
             content: [{
               type: 'text',
               text: `Code context for chunk "${args.chunk_id}":\n\n` +
-                    `File: ${contextResult.chunk.filePath}\n` +
-                    `Lines: ${contextResult.chunk.startLine}-${contextResult.chunk.endLine}\n` +
-                    `Type: ${contextResult.chunk.chunkType}\n\n` +
-                    `\`\`\`${contextResult.chunk.language}\n${contextResult.context}\n\`\`\``
+                    `File: ${codeContextResult.chunk.filePath}\n` +
+                    `Lines: ${codeContextResult.chunk.startLine}-${codeContextResult.chunk.endLine}\n` +
+                    `Type: ${codeContextResult.chunk.chunkType}\n\n` +
+                    `\`\`\`${codeContextResult.chunk.language}\n${codeContextResult.context}\n\`\`\``
             }]
           };
         case 'get_indexing_stats':
-          const stats = indexingService.getStats();
+          const indexingStats = indexingService.getStats();
           return {
             content: [{
               type: 'text',
               text: `Indexing Statistics:\n\n` +
-                    `Total files: ${stats.totalFiles}\n` +
-                    `Total chunks: ${stats.totalChunks}\n` +
-                    `Total size: ${stats.totalSize} bytes\n`
+                    `Total files: ${indexingStats.totalFiles}\n` +
+                    `Total chunks: ${indexingStats.totalChunks}\n` +
+                    `Total size: ${indexingStats.totalSize} bytes\n` +
+                    `Average chunk size: ${Math.round(indexingStats.averageChunkSize)} bytes\n` +
+                    `Last indexed: ${indexingStats.lastIndexed.toISOString()}\n` +
+                    `Indexing duration: ${indexingStats.indexingDuration}ms\n` +
+                    `Errors: ${indexingStats.errors}\n` +
+                    `Warnings: ${indexingStats.warnings}\n` +
+                    `Largest file: ${indexingStats.largestFile}\n\n` +
+                    `Language distribution:\n${Object.entries(indexingStats.languageDistribution)
+                      .map(([lang, count]) => `  ${lang}: ${count}`)
+                      .join('\n')}\n\n` +
+                    `Chunk type distribution:\n${Object.entries(indexingStats.chunkTypeDistribution)
+                      .map(([type, count]) => `  ${type}: ${count}`)
+                      .join('\n')}`
             }]
           };
         case 'get_search_stats':
           const searchStats = await searchService.getSearchStats();
+          const languageStats = Object.entries(searchStats.topLanguages)
+            .sort(([, a], [, b]) => (b as number) - (a as number))
+            .map(([lang, count]) => `  • ${lang}: ${count} chunks`)
+            .join('\n');
+          const chunkTypeStats = Object.entries(searchStats.topChunkTypes)
+            .sort(([, a], [, b]) => (b as number) - (a as number))
+            .map(([type, count]) => `  • ${type}: ${count} chunks`)
+            .join('\n');
           return {
             content: [{
               type: 'text',
               text: `Search Statistics:\n\n` +
-                    `Total indexed chunks: ${searchStats.totalChunks}\n`
+                    `Total queries: ${searchStats.totalQueries}\n` +
+                    `Average latency: ${searchStats.averageLatency.toFixed(2)}ms\n` +
+                    `Cache hit rate: ${searchStats.cacheHitRate.toFixed(2)}%\n` +
+                    `Hybrid search usage: ${searchStats.hybridSearchUsage.toFixed(2)}%\n` +
+                    `LLM reranker usage: ${searchStats.llmRerankerUsage.toFixed(2)}%\n` +
+                    `Error rate: ${searchStats.errorRate.toFixed(2)}%\n` +
+                    `Last query: ${searchStats.lastQuery?.toISOString() || 'N/A'}\n\n` +
+                    `Top Languages:\n${languageStats}\n\n` +
+                    `Top Chunk Types:\n${chunkTypeStats}`
             }]
           };
         case 'clear_index':
@@ -455,7 +511,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           return {
             content: [{
               type: 'text',
-              text: 'Successfully cleared the search index'
+              text: 'Successfully cleared index'
             }]
           };
         case 'remove_file':
@@ -463,19 +519,18 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           return {
             content: [{
               type: 'text',
-              text: `Successfully removed file "${args.file_path}" from the search index`
+              text: `Successfully removed file: ${args.file_path}`
             }]
           };
         case 'reindex_file':
-          const reindexChunks = await indexingService.indexFile(args.file_path as string);
+          const reindexedChunks = await indexingService.reindexFile(args.file_path as string);
           return {
             content: [{
               type: 'text',
-              text: `Successfully re-indexed file "${args.file_path}"\nGenerated ${reindexChunks.length} chunks`
+              text: `Successfully re-indexed file: ${args.file_path}\nGenerated ${reindexedChunks.length} chunks`
             }]
           };
         case 'create_payload_indexes':
-          // Access the Qdrant client through the search service
           await (searchService as any).qdrantClient.ensurePayloadIndexes();
           return {
             content: [{
@@ -488,38 +543,35 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'codebase_search':
-          const codebaseResult = await searchService.searchForCodeReferences({
-            query: args.query as string,
-            language: args.language as string,
-            chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
-            filePath: args.file_path as string,
-            limit: args.limit as number,
-            enableHybrid: args.enable_hybrid as boolean,
-            enableReranking: args.enable_reranking as boolean
-          }, args.max_tokens as number);
-          
-          const referencesText = codebaseResult.references.map((ref, index) => {
-            // Truncate snippet to prevent memory issues
-            const truncatedSnippet = ref.snippet.length > 150 
-              ? ref.snippet.substring(0, 150) + '...' 
-              : ref.snippet;
-            return `${index + 1}. **${ref.path}** (lines ${ref.lines[0]}-${ref.lines[1]}) [${ref.chunkType}]${ref.score ? ` - Score: ${ref.score.toFixed(3)}` : ''}\n` +
-                   `\`\`\`${ref.language || 'text'}\n${truncatedSnippet}\n\`\`\``;
-          }).join('\n\n');
-          
+          const codebaseSearchResults = await searchService.searchForCodeReferences(
+            searchService.buildSearchQuery({
+              query: args.query as string,
+              ...(args.language !== undefined ? { language: args.language as string } : {}),
+              ...(args.chunk_type !== undefined ? { chunkType: args.chunk_type as ChunkType } : {}),
+              ...(args.file_path !== undefined ? { filePath: args.file_path as string } : {}),
+              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
+              ...(args.enable_hybrid !== undefined ? { enableHybrid: args.enable_hybrid as boolean } : {}),
+              ...(args.enable_reranking !== undefined ? { enableReranking: args.enable_reranking as boolean } : {}),
+            }),
+            args.max_tokens as number | undefined
+          );
           return {
             content: [{
               type: 'text',
-              text: `🔍 **Enhanced Codebase Search Results** for "${args.query}"\n\n` +
-                    `📊 **Search Metadata:**\n` +
-                    `- Total results: ${codebaseResult.metadata.totalResults}\n` +
-                    `- Search time: ${codebaseResult.metadata.searchTime}ms\n` +
-                    `- Cache hit: ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
-                    `- Hybrid search: ${codebaseResult.metadata.hybridUsed ? '✅' : '❌'}\n` +
-                    `- LLM re-ranked: ${codebaseResult.metadata.reranked ? '✅' : '❌'}\n` +
-                    `- Truncated: ${codebaseResult.truncated ? '⚠️ Yes' : '✅ No'}\n` +
-                    (codebaseResult.summary ? `- Summary: ${codebaseResult.summary}\n` : '') +
-                    `\n📝 **Code References:**\n\n${referencesText}`
+              text: `Codebase search results for "${args.query}":\n\n` +
+                    (codebaseSearchResults.summary ? `Summary: ${codebaseSearchResults.summary}\n\n` : '') +
+                    codebaseSearchResults.references.map((ref: any, index: number) => {
+                      const score = ref.score ? ` (Score: ${(ref.score * 100).toFixed(2)}%)` : '';
+                      const typeIcon = ''; // icon omitted to avoid context issues
+                      const filePath = ref.path;
+                      const startLine = ref.lines[0];
+                      const endLine = ref.lines[1];
+                      const navLink = `cursor://file?filePath=${encodeURIComponent(filePath)}&startLine=${startLine}&endLine=${endLine}`;
+                      return `${index + 1}. **${ref.chunkType || 'Code'}${score}** ${typeIcon} - [${filePath}:${startLine}-${endLine}](${navLink})\n` +
+                             `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``;
+                    }).join('\n\n') +
+                    (codebaseSearchResults.truncated ? '\n\n(Results truncated to fit context window)' : '') +
+                    `\n\n_Search took ${codebaseSearchResults.metadata.searchTime.toFixed(2)}ms. Total results: ${codebaseSearchResults.metadata.totalResults}. Cache Hit: ${codebaseSearchResults.metadata.cacheHit ? 'Yes' : 'No'}. Hybrid Search Used: ${codebaseSearchResults.metadata.hybridUsed ? 'Yes' : 'No'}. Reranked: ${codebaseSearchResults.metadata.reranked ? 'Yes' : 'No'}_`
             }]
           };
         case 'get_health_status':
@@ -535,7 +587,6 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           };
         case 'get_enhanced_stats':
           const enhancedStats = searchService.getEnhancedSearchStats();
-          const serviceStatus = searchService.getServiceStatus();
           return {
             content: [{
               type: 'text',
@@ -546,10 +597,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                     `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
                     `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
                     `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
-                    `**Service Status:**\n` +
-                    `- LLM Re-ranker: ${serviceStatus.llmReranker.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-                    `- Hybrid Search: ${serviceStatus.hybridSearch.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-                    `- Search Cache: ${serviceStatus.searchCache.enabled ? '✅ Enabled' : '❌ Disabled'}`
+                    ``
             }]
           };
         case 'clear_search_cache':
@@ -728,16 +776,19 @@ class CodebaseIndexingServer {
   }
 
   private async handleSearchCode(args: any) {
-    const { query, language, chunk_type, file_path, limit, threshold } = args;
+    const { query, language, chunk_type, file_path, limit, threshold, enable_hybrid, enable_reranking, llm_reranker_timeout_ms } = args;
     
-    const searchQuery = {
-      query,
-      language,
-      chunkType: chunk_type,
-      filePath: file_path,
-      limit: limit || 10,
-      threshold: threshold || 0.7
-    };
+    const searchQuery = this.searchService.buildSearchQuery({
+      query: query as string,
+      ...(language !== undefined ? { language: language as string } : {}),
+      ...(chunk_type !== undefined ? { chunkType: chunk_type as ChunkType } : {}),
+      ...(file_path !== undefined ? { filePath: file_path as string } : {}),
+      ...(limit !== undefined ? { limit: limit as number } : {}),
+      ...(threshold !== undefined ? { threshold: threshold as number } : {}),
+      ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
+      ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
+      ...(llm_reranker_timeout_ms !== undefined ? { llmRerankerTimeoutMs: llm_reranker_timeout_ms as number } : {}),
+    });
 
     const results = await this.searchService.search(searchQuery);
     
@@ -746,13 +797,10 @@ class CodebaseIndexingServer {
         {
           type: 'text',
           text: `Search results for "${query}":\n\n` +
-                results.map((result, index) => {
-                  const truncatedSnippet = result.snippet.length > 150 
-                    ? result.snippet.substring(0, 150) + '...' 
-                    : result.snippet;
-                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
-                }).join('\n\n')
+                results.map((result: any, index: number) => 
+                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
+                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
+                ).join('\n\n')
         }
       ]
     };
@@ -760,21 +808,24 @@ class CodebaseIndexingServer {
 
   private async handleSearchFunctions(args: any) {
     const { query, language, limit } = args;
-    const results = await this.searchService.searchFunctions(query, language, limit);
+    const searchQuery = this.searchService.buildSearchQuery({
+      query: query as string,
+      ...(language !== undefined ? { language: language as string } : {}),
+      ...(limit !== undefined ? { limit: limit as number } : {}),
+      chunkType: ChunkType.FUNCTION,
+    });
+    const results = await this.searchService.searchFunctions(searchQuery);
     
     return {
       content: [
         {
           type: 'text',
           text: `Function search results for "${query}":\n\n` +
-                results.map((result, index) => {
-                  const truncatedSnippet = result.snippet.length > 150 
-                    ? result.snippet.substring(0, 150) + '...' 
-                    : result.snippet;
-                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
-                         `   ${result.context}\n` +
-                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
-                }).join('\n\n')
+                results.map((result: any, index: number) => 
+                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
+                  `   ${result.context}\n` +
+                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
+                ).join('\n\n')
         }
       ]
     };
@@ -782,21 +833,24 @@ class CodebaseIndexingServer {
 
   private async handleSearchClasses(args: any) {
     const { query, language, limit } = args;
-    const results = await this.searchService.searchClasses(query, language, limit);
+    const searchQuery = this.searchService.buildSearchQuery({
+      query: query as string,
+      ...(language !== undefined ? { language: language as string } : {}),
+      ...(limit !== undefined ? { limit: limit as number } : {}),
+      chunkType: ChunkType.CLASS,
+    });
+    const results = await this.searchService.searchClasses(searchQuery);
     
     return {
       content: [
         {
           type: 'text',
           text: `Class search results for "${query}":\n\n` +
-                results.map((result, index) => {
-                  const truncatedSnippet = result.snippet.length > 150 
-                    ? result.snippet.substring(0, 150) + '...' 
-                    : result.snippet;
-                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
-                         `   ${result.context}\n` +
-                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
-                }).join('\n\n')
+                results.map((result: any, index: number) => 
+                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
+                  `   ${result.context}\n` +
+                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
+                ).join('\n\n')
         }
       ]
     };
@@ -804,20 +858,21 @@ class CodebaseIndexingServer {
 
   private async handleFindSimilar(args: any) {
     const { chunk_id, limit } = args;
-    const results = await this.searchService.findSimilar(chunk_id, limit);
+    const searchQuery = this.searchService.buildSearchQuery({
+      query: chunk_id as string,
+      ...(limit !== undefined ? { limit: limit as number } : {}),
+    });
+    const results = await this.searchService.findSimilar(searchQuery);
     
     return {
       content: [
         {
           type: 'text',
           text: `Similar chunks to "${chunk_id}":\n\n` +
-                results.map((result, index) => {
-                  const truncatedSnippet = result.snippet.length > 150 
-                    ? result.snippet.substring(0, 150) + '...' 
-                    : result.snippet;
-                  return `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                         `\`\`\`${result.chunk.language}\n${truncatedSnippet}\n\`\`\``;
-                }).join('\n\n')
+                results.map((result: any, index: number) => 
+                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
+                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
+                ).join('\n\n')
         }
       ]
     };
@@ -825,271 +880,268 @@ class CodebaseIndexingServer {
 
   private async handleGetCodeContext(args: any) {
     const { chunk_id, context_lines } = args;
-    const result = await this.searchService.getCodeContext(chunk_id, context_lines);
-    
-    if (!result) {
+    const codeContextResult = await this.searchService.getCodeContext(
+      chunk_id as string,
+      context_lines as number | undefined
+    );
+    if (!codeContextResult) {
       return {
-        content: [
-          {
-            type: 'text',
-            text: `Chunk not found: ${chunk_id}`
-          }
-        ]
+        content: [{
+          type: 'text',
+          text: `Chunk not found: ${chunk_id}`
+        }],
+        isError: true
       };
     }
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Code context for chunk "${chunk_id}":\n\n` +
-                `File: ${result.chunk.filePath}\n` +
-                `Lines: ${result.chunk.startLine}-${result.chunk.endLine}\n` +
-                `Type: ${result.chunk.chunkType}\n\n` +
-                `\`\`\`${result.chunk.language}\n${result.context}\n\`\`\``
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Code context for chunk "${chunk_id}":\n\n` +
+              `File: ${codeContextResult.chunk.filePath}\n` +
+              `Lines: ${codeContextResult.chunk.startLine}-${codeContextResult.chunk.endLine}\n` +
+              `Type: ${codeContextResult.chunk.chunkType}\n\n` +
+              `\`\`\`${codeContextResult.chunk.language}\n${codeContextResult.context}\n\`\`\``
+      }]
     };
   }
 
   private async handleGetIndexingStats(_args: any) {
-    const stats = this.indexingService.getStats();
-    
+    const indexingStats = this.indexingService.getStats();
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Indexing Statistics:\n\n` +
-                `Total files: ${stats.totalFiles}\n` +
-                `Total chunks: ${stats.totalChunks}\n` +
-                `Total size: ${stats.totalSize} bytes\n` +
-                `Average chunk size: ${Math.round(stats.averageChunkSize)} bytes\n` +
-                `Last indexed: ${stats.lastIndexed.toISOString()}\n` +
-                `Indexing duration: ${stats.indexingDuration}ms\n` +
-                `Errors: ${stats.errors}\n` +
-                `Warnings: ${stats.warnings}\n` +
-                `Largest file: ${stats.largestFile}\n\n` +
-                `Language distribution:\n${Object.entries(stats.languageDistribution)
-                  .map(([lang, count]) => `  ${lang}: ${count}`)
-                  .join('\n')}\n\n` +
-                `Chunk type distribution:\n${Object.entries(stats.chunkTypeDistribution)
-                  .map(([type, count]) => `  ${type}: ${count}`)
-                  .join('\n')}`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Indexing Statistics:\n\n` +
+              `Total files: ${indexingStats.totalFiles}\n` +
+              `Total chunks: ${indexingStats.totalChunks}\n` +
+              `Total size: ${indexingStats.totalSize} bytes\n` +
+              `Average chunk size: ${Math.round(indexingStats.averageChunkSize)} bytes\n` +
+              `Last indexed: ${indexingStats.lastIndexed.toISOString()}\n` +
+              `Indexing duration: ${indexingStats.indexingDuration}ms\n` +
+              `Errors: ${indexingStats.errors}\n` +
+              `Warnings: ${indexingStats.warnings}\n` +
+              `Largest file: ${indexingStats.largestFile}\n\n` +
+              `Language distribution:\n${Object.entries(indexingStats.languageDistribution)
+                .map(([lang, count]) => `  ${lang}: ${count}`)
+                .join('\n')}\n\n` +
+              `Chunk type distribution:\n${Object.entries(indexingStats.chunkTypeDistribution)
+                .map(([type, count]) => `  ${type}: ${count}`)
+                .join('\n')}`
+      }]
     };
   }
 
   private async handleGetSearchStats(_args: any) {
-    const stats = await this.searchService.getSearchStats();
-    
-    // Format language distribution
-    const languageStats = Object.entries(stats.languageDistribution)
-      .sort(([, a], [, b]) => b - a)
+    const searchStats = await this.searchService.getSearchStats();
+    const languageStats = Object.entries(searchStats.topLanguages)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
       .map(([lang, count]) => `  • ${lang}: ${count} chunks`)
       .join('\n');
-    
-    // Format chunk type distribution  
-    const chunkTypeStats = Object.entries(stats.chunkTypeDistribution)
-      .sort(([, a], [, b]) => b - a)
+    const chunkTypeStats = Object.entries(searchStats.topChunkTypes)
+      .sort(([, a], [, b]) => (b as number) - (a as number))
       .map(([type, count]) => `  • ${type}: ${count} chunks`)
       .join('\n');
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: `🔍 **Codebase Search Statistics**\n\n` +
-                `📊 **Overview:**\n` +
-                `• Total indexed chunks: **${stats.totalChunks.toLocaleString()}**\n` +
-                `• Embedding model: **${stats.embeddingModel}** (${stats.embeddingDimension}D)\n` +
-                `• Collection status: **${stats.collectionStatus}**\n\n` +
-                
-                `💻 **Language Distribution:**\n` +
-                (languageStats || '  • No language data available') + '\n\n' +
-                
-                `🏷️ **Chunk Type Distribution:**\n` +
-                (chunkTypeStats || '  • No chunk type data available') + '\n\n' +
-                
-                `✨ **Search Capabilities:**\n` +
-                `• Semantic code search with **${stats.embeddingModel}**\n` +
-                `• Context-aware suggestions\n` +
-                `• Function, class, and module search\n` +
-                `• File-specific and language-specific filtering\n` +
-                `• Real-time codebase understanding`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Search Statistics:\n\n` +
+              `Total queries: ${searchStats.totalQueries}\n` +
+              `Average latency: ${searchStats.averageLatency.toFixed(2)}ms\n` +
+              `Cache hit rate: ${searchStats.cacheHitRate.toFixed(2)}%\n` +
+              `Hybrid search usage: ${searchStats.hybridSearchUsage.toFixed(2)}%\n` +
+              `LLM reranker usage: ${searchStats.llmRerankerUsage.toFixed(2)}%\n` +
+              `Error rate: ${searchStats.errorRate.toFixed(2)}%\n` +
+              `Last query: ${searchStats.lastQuery?.toISOString() || 'N/A'}\n\n` +
+              `Top Languages:\n${languageStats}\n\n` +
+              `Top Chunk Types:\n${chunkTypeStats}`
+      }]
     };
   }
 
   private async handleClearIndex(_args: any) {
     await this.indexingService.clearIndex();
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: 'Successfully cleared the search index'
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: 'Successfully cleared index'
+      }]
     };
   }
 
   private async handleRemoveFile(args: any) {
-    const { file_path } = args;
-    await this.indexingService.removeFile(file_path);
-    
+    await this.indexingService.removeFile(args.file_path as string);
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Successfully removed file from index: ${file_path}`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Successfully removed file: ${args.file_path}`
+      }]
     };
   }
 
   private async handleReindexFile(args: any) {
-    const { file_path } = args;
-    const chunks = await this.indexingService.reindexFile(file_path);
-    
+    const reindexedChunks = await this.indexingService.reindexFile(args.file_path as string);
     return {
-      content: [
-        {
-          type: 'text',
-          text: `Successfully re-indexed file: ${file_path}\n` +
-                `Generated ${chunks.length} chunks`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Successfully re-indexed file: ${args.file_path}\nGenerated ${reindexedChunks.length} chunks`
+      }]
     };
   }
 
   private async handleCreatePayloadIndexes(_args: any) {
-    // Access the Qdrant client through the search service
-    await (this.searchService as any).qdrantClient.ensurePayloadIndexes();
-    
+    await (this.searchService as any).qdrantClient.ensurePayloadIndexes(_args.force as boolean || false);
     return {
-      content: [
-        {
-          type: 'text',
-          text: '🎉 Successfully created payload indexes for filtering!\n\n' +
-                '✅ chunkType index - for filtering by code elements (function, class, interface, etc.)\n' +
-                '✅ language index - for filtering by programming language (typescript, javascript, etc.)\n' +
-                '✅ filePath index - for file-specific searches\n\n' +
-                '🔍 Your collection is now ready for @codebase-style filtered searches!'
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: 'Successfully created payload indexes'
+      }]
     };
   }
 
   private async handleCodebaseSearch(args: any) {
-    const codebaseResult = await this.searchService.searchForCodeReferences({
-      query: args.query as string,
-      language: args.language as string,
-      chunkType: args.chunk_type ? args.chunk_type as ChunkType : undefined,
-      filePath: args.file_path as string,
-      limit: args.limit as number,
-      enableHybrid: args.enable_hybrid as boolean,
-      enableReranking: args.enable_reranking as boolean
-    }, args.max_tokens as number);
+    const { query, language, chunk_type, file_path, limit, max_tokens, enable_hybrid, enable_reranking } = args;
     
-    const referencesText = codebaseResult.references.map((ref, index) => {
-      // Truncate snippet to prevent memory issues
-      const truncatedSnippet = ref.snippet.length > 200 
-        ? ref.snippet.substring(0, 200) + '...' 
-        : ref.snippet;
-      
-      // Create navigation link
-      const navigationLink = `[📂 ${ref.path}:${ref.lines[0]}](file://${ref.path}#L${ref.lines[0]})`;
-      
-      return `### ${index + 1}. ${navigationLink}\n` +
-             `**Lines ${ref.lines[0]}-${ref.lines[1]}** | **${ref.chunkType}** | **${ref.language || 'text'}**${ref.score ? ` | **Similarity: ${(ref.score * 100).toFixed(1)}%**` : ''}\n\n` +
-             `\`\`\`${ref.language || 'text'}\n${truncatedSnippet}\n\`\`\``;
-    }).join('\n\n');
-    
+    const searchQuery = this.searchService.buildSearchQuery({
+      query: query as string,
+      ...(language !== undefined ? { language: language as string } : {}),
+      ...(chunk_type !== undefined ? { chunkType: chunk_type as ChunkType } : {}),
+      ...(file_path !== undefined ? { filePath: file_path as string } : {}),
+      ...(limit !== undefined ? { limit: limit as number } : {}),
+      ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
+      ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
+    });
+
+    const { references, truncated, summary, metadata } = await this.searchService.searchForCodeReferences(searchQuery, max_tokens as number | undefined);
+
     return {
-      content: [
-        {
-          type: 'text',
-          text: `# 🔍 Natural Language Codebase Search\n\n` +
-                `**Query:** "${args.query}"\n\n` +
-                `## 📊 Search Results\n` +
-                `- **Found:** ${codebaseResult.metadata.totalResults} relevant code references\n` +
-                `- **Search Time:** ${codebaseResult.metadata.searchTime}ms\n` +
-                `- **Cache Hit:** ${codebaseResult.metadata.cacheHit ? '✅' : '❌'}\n` +
-                `- **Hybrid Search:** ${codebaseResult.metadata.hybridUsed ? '✅ (Dense + Sparse)' : '❌'}\n` +
-                `- **LLM Re-ranked:** ${codebaseResult.metadata.reranked ? '✅ (Relevance optimized)' : '❌'}\n` +
-                `- **Results:** ${codebaseResult.truncated ? '⚠️ Truncated for context window' : '✅ Complete'}\n` +
-                (codebaseResult.summary ? `\n**AI Summary:** ${codebaseResult.summary}\n` : '') +
-                `\n## 📝 Code References with Navigation Links\n\n${referencesText}`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Codebase search results for "${query}":\n\n` +
+              (summary ? `Summary: ${summary}\n\n` : '') +
+              references.map((ref: any, index: number) => {
+                const score = ref.score ? ` (Score: ${(ref.score * 100).toFixed(2)}%)` : '';
+                const typeIcon = ref.chunkType ? ` ${this.getChunkTypeIcon(ref.chunkType)}` : '';
+                const filePath = ref.path;
+                const startLine = ref.lines[0];
+                const endLine = ref.lines[1];
+                const navLink = `cursor://file?filePath=${encodeURIComponent(filePath)}&startLine=${startLine}&endLine=${endLine}`;
+                return `${index + 1}. **${ref.chunkType || 'Code'}${score}** ${typeIcon} - [${filePath}:${startLine}-${endLine}](${navLink})\n` +
+                       `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``;
+              }).join('\n\n') +
+              (truncated ? '\n\n(Results truncated to fit context window)' : '') +
+              `\n\n_Search took ${metadata.searchTime.toFixed(2)}ms. Total results: ${metadata.totalResults}. Cache Hit: ${metadata.cacheHit ? 'Yes' : 'No'}. Hybrid Search Used: ${metadata.hybridUsed ? 'Yes' : 'No'}. Reranked: ${metadata.reranked ? 'Yes' : 'No'}_`
+      }]
     };
   }
 
   private async handleGetHealthStatus(_args: any) {
-    // TODO: Implement health monitoring service
+    const healthStatus = await this.searchService.getHealthStatus();
+    const serviceStatuses = Object.entries(healthStatus.services)
+      .map(([name, svc]) => {
+        const latency = svc.latency !== undefined ? ` (Latency: ${svc.latency.toFixed(2)}ms)` : '';
+        const errorRate = svc.errorRate !== undefined ? ` (Error Rate: ${svc.errorRate.toFixed(2)}%)` : '';
+        const message = svc.message ? `: ${svc.message}` : '';
+        return `- ${name}: ${svc.status}${latency}${errorRate}${message}`;
+      }).join('\n');
+    const metrics = Object.entries(healthStatus.metrics)
+      .map(([name, value]) => `- ${name}: ${value.toFixed(2)}`)
+      .join('\n');
     return {
-      content: [
-        {
-          type: 'text',
-          text: '🏥 **System Health Status**\n\n' +
-                '✅ Search Service: Operational\n' +
-                '✅ Indexing Service: Operational\n' +
-                '⚠️ Health monitoring service not yet implemented'
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Health Status: ${healthStatus.status}\n` +
+              `Timestamp: ${healthStatus.timestamp.toISOString()}\n` +
+              `Version: ${healthStatus.version}\n` +
+              `MCP Schema Version: ${healthStatus.mcpSchemaVersion}\n\n` +
+              `Services:\n${serviceStatuses}\n\n` +
+              `Metrics:\n${metrics}`
+      }]
     };
   }
 
   private async handleGetEnhancedStats(_args: any) {
     const enhancedStats = this.searchService.getEnhancedSearchStats();
-    const serviceStatus = this.searchService.getServiceStatus();
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: `📊 **Enhanced Search Statistics**\n\n` +
-                `**Search Performance:**\n` +
-                `- Total queries: ${enhancedStats.totalQueries}\n` +
-                `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
-                `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
-                `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
-                `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
-                `**Service Status:**\n` +
-                `- LLM Re-ranker: ${serviceStatus.llmReranker.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-                `- Hybrid Search: ${serviceStatus.hybridSearch.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
-                `- Search Cache: ${serviceStatus.searchCache.enabled ? '✅ Enabled' : '❌ Disabled'}`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `📊 **Enhanced Search Statistics**\n\n` +
+              `**Search Performance:**\n` +
+              `- Total queries: ${enhancedStats.totalQueries}\n` +
+              `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
+              `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
+              `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
+              `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
+              ``
+      }]
     };
   }
 
   private async handleClearSearchCache(_args: any) {
     this.searchService.clearCaches();
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: '🧹 Successfully cleared search cache and reset statistics'
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: 'Successfully cleared search cache'
+      }]
     };
   }
 
   private async handleInvalidateFileCache(args: any) {
     this.searchService.invalidateFileCache(args.file_path as string);
-    
     return {
-      content: [
-        {
-          type: 'text',
-          text: `🔄 Successfully invalidated cache entries for file: ${args.file_path}`
-        }
-      ]
+      content: [{
+        type: 'text',
+        text: `Successfully invalidated cache for file: ${args.file_path}`
+      }]
     };
+  }
+
+  private getChunkTypeIcon(chunkType: ChunkType): string {
+    switch (chunkType) {
+      case ChunkType.FUNCTION:
+        return '🚀';
+      case ChunkType.CLASS:
+        return '🧠';
+      case ChunkType.MODULE:
+        return '📦';
+      case ChunkType.INTERFACE:
+        return '👔';
+      case ChunkType.ENUM:
+        return '🎨';
+      case ChunkType.TYPE:
+        return '👤';
+      case ChunkType.VARIABLE:
+        return '👾';
+      case ChunkType.IMPORT:
+        return '🔗';
+      case ChunkType.COMMENT:
+        return '💬';
+      case ChunkType.METHOD:
+        return '⚡';
+      case ChunkType.PROPERTY:
+        return '⚙️';
+      case ChunkType.CONSTRUCTOR:
+        return '🏗️';
+      case ChunkType.NAMESPACE:
+        return '🏛️';
+      case ChunkType.DECORATOR:
+        return '✨';
+      case ChunkType.SECTION:
+        return '📚';
+      case ChunkType.CODE_BLOCK:
+        return '📃';
+      case ChunkType.PARAGRAPH:
+        return '✍️';
+      case ChunkType.LIST:
+        return '📜';
+      case ChunkType.TABLE:
+        return '📊';
+      case ChunkType.BLOCKQUOTE:
+        return '🗣️';
+      case ChunkType.GENERIC:
+        return '📄';
+      default:
+        return '❓';
+    }
   }
 
   async run(): Promise<void> {

@@ -9,6 +9,8 @@ export class QdrantVectorClient {
   private embeddingDimension: number;
   private keywordTimeoutMs: number;
   private keywordMaxChunks: number;
+  private requestDurations: number[] = []; // To store last N request durations
+  private maxDurationsToStore: number = 100; // Store up to 100 durations
 
   constructor(
     url: string,
@@ -477,15 +479,53 @@ export class QdrantVectorClient {
   }
 
   /**
+   * Get points by their IDs
+   */
+  async getPointsById(ids: string[]): Promise<any[]> {
+    try {
+      const response = await this.client.retrieve(this.collectionName, {
+        ids: ids,
+        with_payload: true,
+        with_vector: true,
+      });
+      return response;
+    } catch (error) {
+      console.error(`❌ [Qdrant] Failed to retrieve points by ID:`, error);
+      throw new Error(`Qdrant getPointsById failed: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Get average request latency for Qdrant client
+   */
+  public getAverageLatency(): number {
+    if (this.requestDurations.length === 0) {
+      return 0;
+    }
+    const sum = this.requestDurations.reduce((a, b) => a + b, 0);
+    return sum / this.requestDurations.length;
+  }
+
+  /**
    * Test connection to Qdrant
    */
   async testConnection(): Promise<boolean> {
     try {
+      const startTime = Date.now();
       await this.client.getCollections();
+      const duration = Date.now() - startTime;
+      this.addRequestDuration(duration);
       return true;
     } catch (error) {
       console.error('Qdrant connection test failed:', error);
       return false;
+    }
+  }
+
+  private addRequestDuration(duration: number): void {
+    this.requestDurations.push(duration);
+    if (this.requestDurations.length > this.maxDurationsToStore) {
+      this.requestDurations.shift(); // Remove the oldest duration
     }
   }
 

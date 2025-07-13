@@ -188,6 +188,24 @@ export class SearchCacheService {
   }
 
   /**
+   * Get current size of the cache (number of entries)
+   */
+  size(): number {
+    return this.cache.size;
+  }
+
+  /**
+   * Get estimated memory usage of the cache in bytes
+   */
+  memoryUsage(): number {
+    // This is a rough estimate. A more accurate measure would involve
+    // deep-inspecting object sizes, which is complex in JavaScript.
+    // Assume an average entry size for estimation.
+    const averageEntrySizeEstimate = 2000; // 2KB per entry, based on typical SearchResult complexity
+    return this.cache.size * averageEntrySizeEstimate;
+  }
+
+  /**
    * Get cache statistics
    */
   getStats(): {
