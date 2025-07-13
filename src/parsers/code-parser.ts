@@ -105,6 +105,28 @@ const loadLanguage = async (language: string): Promise<any> => {
         }
         return grammar;
       }
+      case 'markdown': {
+        const mdModule = await import('tree-sitter-markdown');
+        console.log(`Markdown module loaded:`, { 
+          hasDefault: !!mdModule.default, 
+          keys: Object.keys(mdModule),
+          defaultType: typeof mdModule.default 
+        });
+        
+        // Try different export patterns for markdown
+        let grammar = mdModule.default;
+        if (!grammar && typeof mdModule === 'function') {
+          grammar = mdModule;
+        }
+        if (!grammar && (mdModule as any).markdown) {
+          grammar = (mdModule as any).markdown;
+        }
+        
+        if (!grammar) {
+          throw new Error('Markdown grammar not found in module');
+        }
+        return grammar;
+      }
       default:
         throw new Error(`Language parser not available for: ${language}`);
     }
@@ -295,6 +317,13 @@ export class CodeParser {
    * Parse generic content by splitting into logical chunks
    */
   private parseGenericContent(content: string, filePath: string): CodeChunk[] {
+    const ext = extname(filePath).toLowerCase();
+    
+    // Special handling for markdown files without tree-sitter
+    if (ext === '.md' || ext === '.markdown') {
+      return this.parseMarkdownContentFallback(content, filePath);
+    }
+    
     const chunks: CodeChunk[] = [];
     const lines = content.split('\n');
     const chunkSize = 50; // Lines per chunk
@@ -337,6 +366,187 @@ export class CodeParser {
   }
 
   /**
+   * Parse markdown content without tree-sitter (fallback)
+   */
+  private parseMarkdownContentFallback(content: string, filePath: string): CodeChunk[] {
+    const chunks: CodeChunk[] = [];
+    const lines = content.split('\n');
+    let currentChunk = '';
+    let currentStartLine = 1;
+    let currentChunkType = ChunkType.PARAGRAPH;
+    let currentName = '';
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNumber = i + 1;
+
+      // Check for ATX headings (# ## ### etc)
+      const atxHeadingMatch = line.match(/^(#{1,6})\s*(.+?)(?:\s*#*)?$/);
+      if (atxHeadingMatch) {
+        // Save previous chunk if it exists
+        if (currentChunk.trim()) {
+          chunks.push(this.createMarkdownChunk(
+            currentChunk.trim(),
+            filePath,
+            currentStartLine,
+            lineNumber - 1,
+            currentChunkType,
+            currentName,
+            content
+          ));
+        }
+
+        // Start new section chunk
+        currentChunk = line;
+        currentStartLine = lineNumber;
+        currentChunkType = ChunkType.SECTION;
+        currentName = atxHeadingMatch[2].trim();
+        continue;
+      }
+
+      // Check for setext headings (underlined with = or -)
+      if (i > 0 && line.match(/^[=\-]{3,}$/)) {
+        const prevLine = lines[i - 1];
+        if (prevLine.trim()) {
+          // Save previous chunk if it exists and is not the heading line
+          if (currentChunk.trim() && currentChunk.trim() !== prevLine.trim()) {
+            chunks.push(this.createMarkdownChunk(
+              currentChunk.trim(),
+              filePath,
+              currentStartLine,
+              lineNumber - 2,
+              currentChunkType,
+              currentName,
+              content
+            ));
+          }
+
+          // Create section chunk with heading and underline
+          const sectionContent = prevLine + '\n' + line;
+          chunks.push(this.createMarkdownChunk(
+            sectionContent,
+            filePath,
+            lineNumber - 1,
+            lineNumber,
+            ChunkType.SECTION,
+            prevLine.trim(),
+            content
+          ));
+
+          currentChunk = '';
+          currentStartLine = lineNumber + 1;
+          currentChunkType = ChunkType.PARAGRAPH;
+          currentName = '';
+          continue;
+        }
+      }
+
+      // Check for fenced code blocks
+      if (line.match(/^```/)) {
+        // Save previous chunk if it exists
+        if (currentChunk.trim()) {
+          chunks.push(this.createMarkdownChunk(
+            currentChunk.trim(),
+            filePath,
+            currentStartLine,
+            lineNumber - 1,
+            currentChunkType,
+            currentName,
+            content
+          ));
+        }
+
+        // Find the end of the code block
+        const langMatch = line.match(/^```\s*([a-zA-Z0-9_+-]*)/);
+        const language = langMatch && langMatch[1] ? langMatch[1] : 'code';
+        
+        let codeBlockContent = line + '\n';
+        let j = i + 1;
+        while (j < lines.length && !lines[j].match(/^```\s*$/)) {
+          codeBlockContent += lines[j] + '\n';
+          j++;
+        }
+        if (j < lines.length) {
+          codeBlockContent += lines[j]; // Add closing ```
+        }
+
+        chunks.push(this.createMarkdownChunk(
+          codeBlockContent.trim(),
+          filePath,
+          lineNumber,
+          j + 1,
+          ChunkType.CODE_BLOCK,
+          language,
+          content
+        ));
+
+        i = j; // Skip to after the code block
+        currentChunk = '';
+        currentStartLine = j + 2;
+        currentChunkType = ChunkType.PARAGRAPH;
+        currentName = '';
+        continue;
+      }
+
+      // Add line to current chunk
+      currentChunk += line + '\n';
+    }
+
+    // Save final chunk if it exists
+    if (currentChunk.trim()) {
+      chunks.push(this.createMarkdownChunk(
+        currentChunk.trim(),
+        filePath,
+        currentStartLine,
+        lines.length,
+        currentChunkType,
+        currentName,
+        content
+      ));
+    }
+
+    return chunks;
+  }
+
+  /**
+   * Create a markdown chunk with proper metadata
+   */
+  private createMarkdownChunk(
+    content: string,
+    filePath: string,
+    startLine: number,
+    endLine: number,
+    chunkType: ChunkType,
+    name: string,
+    fullContent: string
+  ): CodeChunk {
+    const metadata: ChunkMetadata = {
+      fileSize: fullContent.length,
+      lastModified: Date.now(),
+      language: 'markdown',
+      extension: extname(filePath),
+      relativePath: filePath,
+      isTest: this.isTestFile(filePath),
+      complexity: this.calculateComplexity(content)
+    };
+
+    return {
+      id: this.generateChunkId(filePath, startLine, endLine, chunkType),
+      content,
+      filePath,
+      language: 'markdown',
+      startLine,
+      endLine,
+      chunkType,
+      functionName: chunkType === ChunkType.CODE_BLOCK ? name : undefined,
+      className: chunkType === ChunkType.SECTION ? name : undefined,
+      moduleName: undefined,
+      contentHash: this.generateContentHash(content),
+      metadata
+    };
+  }
+
+  /**
    * Get language from file extension
    */
   private getLanguageFromFile(filePath: string): string | null {
@@ -347,7 +557,9 @@ export class CodeParser {
       '.jsx': 'javascript',
       '.ts': 'typescript',
       '.tsx': 'tsx',
-      '.py': 'python'
+      '.py': 'python',
+      '.md': 'markdown',
+      '.markdown': 'markdown'
     };
 
     return languageMap[ext] || null;
@@ -592,10 +804,77 @@ export class CodeParser {
       supportsSparseSearch: true
     };
 
+    // Markdown configuration
+    const markdownConfig: LanguageConfig = {
+      name: 'markdown',
+      extensions: ['.md', '.markdown'],
+      grammar: 'markdown',
+      chunkStrategies: [
+        {
+          nodeType: 'atx_heading',
+          chunkType: ChunkType.SECTION,
+          nameExtractor: (node) => this.extractMarkdownHeading(node),
+          includeContext: true
+        },
+        {
+          nodeType: 'setext_heading',
+          chunkType: ChunkType.SECTION,
+          nameExtractor: (node) => this.extractMarkdownHeading(node),
+          includeContext: true
+        },
+        {
+          nodeType: 'fenced_code_block',
+          chunkType: ChunkType.CODE_BLOCK,
+          nameExtractor: (node) => this.extractCodeBlockLanguage(node)
+        },
+        {
+          nodeType: 'indented_code_block',
+          chunkType: ChunkType.CODE_BLOCK,
+          nameExtractor: () => 'code'
+        },
+        {
+          nodeType: 'paragraph',
+          chunkType: ChunkType.PARAGRAPH,
+          minSize: 50, // Only chunk substantial paragraphs
+          maxSize: 2000
+        },
+        {
+          nodeType: 'list',
+          chunkType: ChunkType.LIST,
+          minSize: 30
+        },
+        {
+          nodeType: 'table',
+          chunkType: ChunkType.TABLE,
+          nameExtractor: () => 'table'
+        },
+        {
+          nodeType: 'block_quote',
+          chunkType: ChunkType.BLOCKQUOTE,
+          minSize: 30
+        }
+      ],
+      keywords: ['#', '##', '###', '####', '#####', '######', '```', '---', '***'],
+      commentPatterns: ['<!--', '-->'],
+      astNodeMappings: {
+        'atx_heading': ChunkType.SECTION,
+        'setext_heading': ChunkType.SECTION,
+        'fenced_code_block': ChunkType.CODE_BLOCK,
+        'indented_code_block': ChunkType.CODE_BLOCK,
+        'paragraph': ChunkType.PARAGRAPH,
+        'list': ChunkType.LIST,
+        'table': ChunkType.TABLE,
+        'block_quote': ChunkType.BLOCKQUOTE
+      },
+      contextualChunking: true,
+      supportsSparseSearch: true
+    };
+
     this.languageConfigs.set('javascript', jsConfig);
     this.languageConfigs.set('typescript', jsConfig);
     this.languageConfigs.set('tsx', jsConfig);
     this.languageConfigs.set('python', pyConfig);
+    this.languageConfigs.set('markdown', markdownConfig);
   }
 
   /**
@@ -629,5 +908,43 @@ export class CodeParser {
   private extractMethodName(node: ParsedNode): string {
     const nameMatch = node.text.match(/([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/);
     return nameMatch ? nameMatch[1] : 'anonymous';
+  }
+
+  /**
+   * Extract markdown heading text from node
+   */
+  private extractMarkdownHeading(node: ParsedNode): string {
+    // Extract text from ATX headings (# ## ### etc) or setext headings (=== --- underlines)
+    const text = node.text.trim();
+    
+    // For ATX headings, remove the # symbols
+    const atxMatch = text.match(/^#{1,6}\s*(.+?)(?:\s*#*)?$/);
+    if (atxMatch) {
+      return atxMatch[1].trim();
+    }
+    
+    // For setext headings, take the first line
+    const setextMatch = text.match(/^(.+?)\n[=\-]+/);
+    if (setextMatch) {
+      return setextMatch[1].trim();
+    }
+    
+    // Fallback to first line
+    return text.split('\n')[0].trim();
+  }
+
+  /**
+   * Extract code block language from fenced code block
+   */
+  private extractCodeBlockLanguage(node: ParsedNode): string {
+    const text = node.text.trim();
+    
+    // Extract language from fenced code block (```language)
+    const langMatch = text.match(/^```\s*([a-zA-Z0-9_+-]*)/);
+    if (langMatch && langMatch[1]) {
+      return langMatch[1];
+    }
+    
+    return 'code';
   }
 } 

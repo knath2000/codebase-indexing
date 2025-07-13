@@ -17,8 +17,10 @@
 - [x] **Error Handling**: Proper JSON-RPC error responses with correct status codes
 
 ### Indexing Capabilities
-- [x] **Multi-language Support**: JavaScript, TypeScript, Python parsing
+- [x] **Multi-language Support**: JavaScript, TypeScript, Python, Markdown parsing
 - [x] **Tree-sitter Integration**: Semantic code chunk extraction
+- [x] **Markdown Support**: Header-based semantic parsing with fallback
+- [x] **Sophisticated Parsing Strategy**: Tree-sitter first, intelligent fallback
 - [x] **Incremental Indexing**: File modification time tracking
 - [x] **Batch Processing**: Configurable batch sizes for embeddings
 - [x] **File Filtering**: Exclude patterns and size limits
@@ -46,6 +48,15 @@
 - [x] **HTTP Server**: Express.js with CORS and JSON-RPC support
 
 ## 🚧 In Progress (Current Session)
+
+### ✅ COMPLETED: Markdown Support Implementation
+- [x] **Tree-sitter-markdown Integration**: Added dependency and language loading
+- [x] **Markdown Chunk Types**: Added SECTION, CODE_BLOCK, PARAGRAPH, LIST, TABLE, BLOCKQUOTE
+- [x] **Semantic Header Parsing**: ATX headings (# ## ###) and setext headings (=== ---)
+- [x] **Code Block Detection**: Fenced code blocks with language detection
+- [x] **Intelligent Fallback**: Custom markdown parser when tree-sitter fails
+- [x] **Testing**: Verified with comprehensive test markdown file
+- [x] **RooCode Parity**: Achieved full sophisticated parsing strategy
 
 ### Research & Gap Analysis
 - [x] **Cursor Architecture Research**: Used Perplexity MCP to analyze Cursor's codebase indexing system

@@ -86,7 +86,14 @@ export enum ChunkType {
   CONSTRUCTOR = 'constructor',
   ENUM = 'enum',
   NAMESPACE = 'namespace',
-  DECORATOR = 'decorator'
+  DECORATOR = 'decorator',
+  // Markdown-specific chunk types
+  SECTION = 'section',
+  CODE_BLOCK = 'code_block',
+  PARAGRAPH = 'paragraph',
+  LIST = 'list',
+  TABLE = 'table',
+  BLOCKQUOTE = 'blockquote'
 }
 
 export interface ChunkMetadata {
