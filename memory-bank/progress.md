@@ -23,7 +23,7 @@
 - [x] **Sophisticated Parsing Strategy**: Tree-sitter first, intelligent fallback
 - [x] **Incremental Indexing**: File modification time tracking
 - [x] **Batch Processing**: Configurable batch sizes for embeddings
-- [x] **File Filtering**: Exclude patterns and size limits
+- [x] **File Filtering**: Comprehensive exclude patterns, 1MB size limits, and binary detection
 - [x] **Directory Traversal**: Recursive indexing with pattern exclusion
 
 ### Search Functionality
@@ -57,6 +57,16 @@
 - [x] **Intelligent Fallback**: Custom markdown parser when tree-sitter fails
 - [x] **Testing**: Verified with comprehensive test markdown file
 - [x] **RooCode Parity**: Achieved full sophisticated parsing strategy
+
+### ✅ COMPLETED: Enhanced File Filtering & Binary Detection
+- [x] **1MB Size Limit Enforcement**: Properly configured and tested file size limits
+- [x] **Comprehensive Binary Exclusions**: Added 60+ binary file extensions (images, videos, audio, archives, executables)
+- [x] **Content-Based Binary Detection**: Magic number detection for PNG, JPEG, GIF, PDF, ZIP, executables
+- [x] **Null Byte Detection**: Identifies binary files by null byte presence
+- [x] **Non-Printable Character Analysis**: Statistical analysis for binary content detection
+- [x] **Empty File Filtering**: Skips zero-byte files
+- [x] **Enhanced Logging**: Detailed filtering statistics and skip reasons
+- [x] **Testing**: Verified with comprehensive test covering all filter types
 
 ### Research & Gap Analysis
 - [x] **Cursor Architecture Research**: Used Perplexity MCP to analyze Cursor's codebase indexing system

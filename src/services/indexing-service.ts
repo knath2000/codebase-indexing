@@ -1,5 +1,5 @@
 import { glob } from 'glob';
-import { stat } from 'fs/promises';
+import { stat, readFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { EventEmitter } from 'events';
 import { VoyageClient } from '../clients/voyage-client.js';
@@ -174,11 +174,30 @@ export class IndexingService extends EventEmitter {
         return [];
       }
 
+      // Check file size and binary content
+      const fileStats = await stat(absolutePath);
+      if (fileStats.size > this.config.maxFileSize) {
+        console.log(`⚠️  Skipping ${filePath}: too large (${Math.round(fileStats.size / 1024 / 1024 * 100) / 100}MB > ${Math.round(this.config.maxFileSize / 1024 / 1024)}MB)`);
+        return [];
+      }
+
+      // Skip empty files
+      if (fileStats.size === 0) {
+        console.log(`⚠️  Skipping ${filePath}: empty file`);
+        return [];
+      }
+
+      // Check if file is binary
+      const isBinary = await this.isBinaryFile(absolutePath);
+      if (isBinary) {
+        console.log(`⚠️  Skipping ${filePath}: detected as binary file`);
+        return [];
+      }
+
       // Check if file is already indexed and up to date
-      const fileStat = await stat(absolutePath);
       const isIndexed = await this.qdrantClient.isFileIndexed(
         absolutePath,
-        fileStat.mtime.getTime()
+        fileStats.mtime.getTime()
       );
 
       if (isIndexed) {
@@ -297,24 +316,57 @@ export class IndexingService extends EventEmitter {
       ignore: this.config.excludePatterns
     });
 
+    console.log(`🔍 Found ${allFiles.length} files after exclude pattern filtering`);
+
     // Filter by supported extensions
     const supportedFiles = allFiles.filter(file => {
       const ext = file.split('.').pop()?.toLowerCase();
       return ext && this.config.supportedExtensions.includes(`.${ext}`);
     });
 
-    // Filter by file size
+    console.log(`📝 ${supportedFiles.length} files have supported extensions`);
+
+    // Filter by file size and binary content
     const validFiles: string[] = [];
+    let skippedSize = 0;
+    let skippedBinary = 0;
+
     for (const file of supportedFiles) {
       try {
         const fileStat = await stat(file);
-        if (fileStat.size <= this.config.maxFileSize) {
-          validFiles.push(file);
+        
+        // Check file size (1MB limit)
+        if (fileStat.size > this.config.maxFileSize) {
+          skippedSize++;
+          console.log(`⚠️  Skipping ${file}: too large (${Math.round(fileStat.size / 1024 / 1024 * 100) / 100}MB > ${Math.round(this.config.maxFileSize / 1024 / 1024)}MB)`);
+          continue;
         }
+
+        // Skip empty files
+        if (fileStat.size === 0) {
+          console.log(`⚠️  Skipping ${file}: empty file`);
+          continue;
+        }
+
+        // Check if file is binary
+        const isBinary = await this.isBinaryFile(file);
+        if (isBinary) {
+          skippedBinary++;
+          console.log(`⚠️  Skipping ${file}: detected as binary file`);
+          continue;
+        }
+
+        validFiles.push(file);
       } catch (error) {
-        console.warn(`Could not stat file ${file}:`, error);
+        console.warn(`❌ Could not process file ${file}:`, error);
       }
     }
+
+    console.log(`✅ Final result: ${validFiles.length} valid files to index`);
+    console.log(`📊 Filtering summary:`);
+    console.log(`   - Skipped due to size (>${Math.round(this.config.maxFileSize / 1024 / 1024)}MB): ${skippedSize}`);
+    console.log(`   - Skipped due to binary content: ${skippedBinary}`);
+    console.log(`   - Valid text files: ${validFiles.length}`);
 
     return validFiles;
   }
@@ -460,6 +512,80 @@ export class IndexingService extends EventEmitter {
     }
 
     return false;
+  }
+
+  /**
+   * Check if file is binary by examining its content
+   */
+  private async isBinaryFile(filePath: string): Promise<boolean> {
+    try {
+      // Read first 8KB of the file to check for binary content
+      const buffer = await readFile(filePath, { flag: 'r' });
+      const sampleSize = Math.min(8192, buffer.length);
+      const sample = buffer.subarray(0, sampleSize);
+
+      // Check for null bytes (common in binary files)
+      for (let i = 0; i < sample.length; i++) {
+        if (sample[i] === 0) {
+          return true;
+        }
+      }
+
+      // Check for high percentage of non-printable characters
+      let nonPrintableCount = 0;
+      for (let i = 0; i < sample.length; i++) {
+        const byte = sample[i];
+        // Consider bytes outside printable ASCII range (except common whitespace)
+        if (byte < 9 || (byte > 13 && byte < 32) || byte > 126) {
+          nonPrintableCount++;
+        }
+      }
+
+      // If more than 30% of bytes are non-printable, consider it binary
+      const nonPrintableRatio = nonPrintableCount / sample.length;
+      if (nonPrintableRatio > 0.3) {
+        return true;
+      }
+
+      // Check for common binary file signatures (magic numbers)
+      const binarySignatures = [
+        [0x89, 0x50, 0x4E, 0x47], // PNG
+        [0xFF, 0xD8, 0xFF], // JPEG
+        [0x47, 0x49, 0x46], // GIF
+        [0x25, 0x50, 0x44, 0x46], // PDF
+        [0x50, 0x4B, 0x03, 0x04], // ZIP
+        [0x50, 0x4B, 0x05, 0x06], // ZIP (empty)
+        [0x50, 0x4B, 0x07, 0x08], // ZIP (spanned)
+        [0x1F, 0x8B], // GZIP
+        [0x42, 0x5A, 0x68], // BZIP2
+        [0x7F, 0x45, 0x4C, 0x46], // ELF executable
+        [0x4D, 0x5A], // Windows PE executable
+        [0xCA, 0xFE, 0xBA, 0xBE], // Java class file
+        [0xFE, 0xED, 0xFA, 0xCE], // Mach-O binary (32-bit)
+        [0xFE, 0xED, 0xFA, 0xCF], // Mach-O binary (64-bit)
+      ];
+
+      for (const signature of binarySignatures) {
+        if (sample.length >= signature.length) {
+          let matches = true;
+          for (let i = 0; i < signature.length; i++) {
+            if (sample[i] !== signature[i]) {
+              matches = false;
+              break;
+            }
+          }
+          if (matches) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    } catch (error) {
+      // If we can't read the file, assume it might be binary to be safe
+      console.warn(`Could not check if file ${filePath} is binary:`, error);
+      return true;
+    }
   }
 
   /**

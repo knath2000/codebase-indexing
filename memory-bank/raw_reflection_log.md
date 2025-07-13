@@ -1,5 +1,42 @@
 # Raw Reflection Log
 
+## Recent Entries
+
+---
+**Date**: 2025-01-03  
+**TaskRef**: "Implement markdown support with sophisticated parsing strategy for RooCode parity"
+
+**Learnings**:
+- Successfully implemented comprehensive markdown parsing using tree-sitter-markdown with intelligent fallback
+- Discovered that tree-sitter-markdown can have language object issues, but custom fallback parser provides robust solution
+- Markdown parsing requires different approach than code parsing - headers as semantic entry points vs functions/classes
+- ATX headings (# ## ###) and setext headings (=== ---) both need to be handled for complete markdown support
+- Fenced code blocks with language detection provides valuable context for search functionality
+- Intelligent fallback strategy works perfectly: Tree-sitter first → Markdown fallback → Generic line-based chunking
+
+**Implementation Details**:
+- Added 6 new markdown-specific chunk types: SECTION, CODE_BLOCK, PARAGRAPH, LIST, TABLE, BLOCKQUOTE
+- Tree-sitter-markdown integration with proper error handling and fallback
+- Custom markdown parser handles ATX/setext headings, fenced code blocks, and paragraph chunking
+- Enhanced generic parsing to detect markdown files and use special handling
+- Comprehensive testing showed perfect parsing of headers, code blocks, and content structure
+
+**Successes**:
+- Achieved full RooCode parity for sophisticated parsing strategy
+- Robust error handling with graceful fallback when tree-sitter fails
+- Clean separation of concerns with dedicated markdown extraction methods
+- Proper chunk metadata including language detection for code blocks
+- Semantic header parsing preserves document structure for AI context
+
+**Technical Patterns**:
+- Tree-sitter first approach with intelligent fallback architecture
+- Chunk type enumeration extensibility for new content types
+- Language-specific parsing configurations with strategy patterns
+- Error handling that doesn't break the indexing process
+- TypeScript module declaration for untyped tree-sitter packages
+
+---
+
 ---
 **Date**: 2025-01-25  
 **TaskRef**: "Initialize memory-bank and enhance README for MCP Codebase Indexing Server"
