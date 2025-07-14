@@ -167,6 +167,12 @@ export class CodeParser {
       const tree = this.parser.parse(content);
       const chunks = this.extractChunks(tree.rootNode, content, filePath, language);
       
+      if (chunks.length === 0) {
+        // Fallback: generic chunking to ensure every file is represented
+        const genericChunks = this.parseGenericContent(content, filePath);
+        chunks.push(...genericChunks);
+      }
+      
       return chunks;
     } catch (error) {
       console.warn(`Failed to parse ${filePath} with ${language} parser, falling back to generic:`, error);
@@ -196,6 +202,12 @@ export class CodeParser {
       const tree = this.parser.parse(content);
       const chunks = this.extractChunks(tree.rootNode, content, filePath, detectedLanguage);
       
+      if (chunks.length === 0) {
+        // Fallback: generic chunking to ensure every file is represented
+        const genericChunks = this.parseGenericContent(content, filePath);
+        chunks.push(...genericChunks);
+      }
+      
       return chunks;
     } catch (error) {
       console.warn(`Failed to parse content with ${detectedLanguage} parser, falling back to generic:`, error);
@@ -217,6 +229,12 @@ export class CodeParser {
     const lines = content.split('\n');
     this.traverseNode(node, content, filePath, language, config, chunks, lines);
     
+    // Include any deferred sub-chunks generated for large nodes
+    if ((this as any)._deferredChunks && (this as any)._deferredChunks.length > 0) {
+      chunks.push(...(this as any)._deferredChunks);
+      delete (this as any)._deferredChunks;
+    }
+
     return chunks;
   }
 
@@ -304,6 +322,49 @@ export class CodeParser {
       exports: this.extractExports(chunkContent, language),
       imports: this.extractImports(chunkContent, language)
     };
+
+    // If the chunk is larger than MAX_CHUNK_SIZE, split it into multiple overlapping sub-chunks
+    if (chunkContent.length > MAX_CHUNK_SIZE) {
+      const SUB_CHUNK_OVERLAP = 100; // 100 char overlap for context preservation
+      const subChunks: CodeChunk[] = [];
+
+      for (let offset = 0; offset < chunkContent.length; offset += MAX_CHUNK_SIZE - SUB_CHUNK_OVERLAP) {
+        const subContent = chunkContent.slice(offset, offset + MAX_CHUNK_SIZE);
+
+        if (subContent.length < MIN_CHUNK_SIZE) {
+          continue; // skip tiny trailing slice
+        }
+
+        // Estimate line numbers inside the parent chunk for metadata
+        const offsetLines = chunkContent.slice(0, offset).split('\n').length - 1;
+        const subStartLine = startLine + offsetLines;
+        const subEndLine = Math.min(subStartLine + subContent.split('\n').length - 1, endLine);
+
+        const subMetadata: ChunkMetadata = {
+          ...metadata,
+          complexity: this.calculateComplexity(subContent)
+        };
+
+        subChunks.push({
+          id: this.generateChunkId(filePath, subStartLine, subEndLine, strategy.chunkType),
+          content: subContent,
+          filePath,
+          language,
+          startLine: subStartLine,
+          endLine: subEndLine,
+          chunkType: strategy.chunkType,
+          functionName: strategy.chunkType === ChunkType.FUNCTION ? name : undefined,
+          className: strategy.chunkType === ChunkType.CLASS ? name : undefined,
+          moduleName: strategy.chunkType === ChunkType.MODULE ? name : undefined,
+          contentHash: this.generateContentHash(subContent),
+          metadata: subMetadata
+        });
+      }
+
+      // Return null here; traverseNode will handle pushing subChunks separately
+      (this as any)._deferredChunks = ((this as any)._deferredChunks || []).concat(subChunks);
+      return null;
+    }
 
     return {
       id: this.generateChunkId(filePath, startLine, endLine, strategy.chunkType),
@@ -814,6 +875,11 @@ export class CodeParser {
           nodeType: 'method_definition',
           chunkType: ChunkType.FUNCTION,
           nameExtractor: (node) => this.extractMethodName(node)
+        },
+        {
+          nodeType: 'arrow_function',
+          chunkType: ChunkType.FUNCTION,
+          nameExtractor: (node) => this.extractFunctionName(node)
         }
       ],
       keywords: ['function', 'class', 'interface', 'const', 'let', 'var', 'import', 'export'],
