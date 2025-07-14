@@ -9,12 +9,14 @@ export class LLMRerankerService {
   private errorCount: number = 0;
   private totalRequests: number = 0;
   private maxDurationsToStore: number = 100; // Store up to 100 durations
+  private baseUrl?: string;
 
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
     this.model = config.llmRerankerModel;
     this.enabled = config.enableLLMReranking && !!this.apiKey;
     this.timeoutMs = config.llmRerankerTimeoutMs;
+    this.baseUrl = (config as any).llmRerankerBaseUrl;
     
     if (config.enableLLMReranking && !this.apiKey) {
       console.warn('LLM re-ranking is enabled but no API key provided. Re-ranking will be disabled.');
@@ -207,8 +209,11 @@ JSON Response:`;
     if (!this.apiKey) {
       throw new Error('No API key configured for LLM re-ranking');
     }
-
-    // Support different LLM providers based on model name
+    // If a custom base URL is provided, treat as OpenAI-compatible gateway
+    if (this.baseUrl) {
+      return this.callOpenAIAPI(prompt, requestStartTime);
+    }
+    // Support different LLM providers based on model name when no custom base URL
     if (this.model.includes('claude')) {
       return this.callAnthropicAPI(prompt, requestStartTime);
     } else if (this.model.includes('gpt')) {
@@ -274,11 +279,13 @@ JSON Response:`;
     try {
       console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
       const apiCallStartTime = Date.now();
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const endpoint = this.baseUrl ? `${this.baseUrl.replace(/\/?$/, '')}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey!}`
+        'Authorization': `Bearer ${this.apiKey!}`,
+        'x-api-key': this.apiKey!
       },
       body: JSON.stringify({
         model: this.model,

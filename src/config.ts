@@ -117,6 +117,7 @@ export function loadConfig(): Config {
       '.html', '.css', '.scss', '.less'
     ],
     llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '25000'),
+    llmRerankerBaseUrl: process.env.LLM_RERANKER_BASE_URL,
     keywordSearchTimeoutMs: parseInt(process.env.KEYWORD_SEARCH_TIMEOUT_MS || '10000'),
     keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000')
   };
@@ -208,6 +209,7 @@ export function printConfigSummary(config: Config): void {
   console.log(`  Max File Size: ${config.maxFileSize} bytes`);
   console.log(`  Supported Extensions: ${config.supportedExtensions.join(', ')}`);
   console.log(`  LLM Reranker Timeout: ${config.llmRerankerTimeoutMs} ms`);
+  console.log(`  LLM Reranker Base URL: ${config.llmRerankerBaseUrl}`);
   console.log(`  Exclude Patterns: ${config.excludePatterns.join(', ')}`);
   console.log(`  Keyword Search Timeout: ${config.keywordSearchTimeoutMs} ms`);
   console.log(`  Keyword Search Max Chunks: ${config.keywordSearchMaxChunks}`);
