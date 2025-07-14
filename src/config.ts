@@ -120,7 +120,10 @@ export function loadConfig(): Config {
     llmRerankerBaseUrl: process.env.LLM_RERANKER_BASE_URL,
     keywordSearchTimeoutMs: parseInt(process.env.KEYWORD_SEARCH_TIMEOUT_MS || '10000'),
     keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000'),
-    hybridSearchAlpha: parseFloat(process.env.HYBRID_SEARCH_ALPHA || '0.7')
+    hybridSearchAlpha: parseFloat(process.env.HYBRID_SEARCH_ALPHA || '0.7'),
+    enableLLMReranking: process.env.ENABLE_LLM_RERANKING ? process.env.ENABLE_LLM_RERANKING !== 'false' : true,
+    llmRerankerApiKey: process.env.LLM_RERANKER_API_KEY,
+    llmRerankerModel: process.env.LLM_RERANKER_MODEL || 'anthropic/claude-3-haiku-20240307',
   };
 
   // Validate configuration
