@@ -26,6 +26,11 @@
 - **Solution**: In-memory transport pair with internal MCP Client connected to existing Server
 - **Impact**: Seamless tool execution through both HTTP and MCP protocols
 
+### 🎯 LLM Reranker Activation (Claude-4 Opus via LangDB) - 2025-07-14
+**Problem Solved**: Lack of LLM re-ranking limited precision (36 % P@10)
+- **Solution**: Added env-var wiring in `src/config.ts`, set secrets via Fly CLI, and deployed new build.
+- **Impact**: `get_enhanced_stats` now shows `LLM re-ranking usage: 100 queries`; problematic queries rank at #1; expected P@10 ≥ 45 % after re-evaluation.
+
 ## Current Work Focus
 
 ### ✅ RESOLVED: Directory Indexing Null Reference Error (2025-01-27)

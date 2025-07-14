@@ -354,3 +354,34 @@
 - Session affinity patterns are critical for any SSE-based services with persistent connections
 
 --- 
+
+---
+**Date:** 2025-07-14  
+**TaskRef:** "LLM-Reranker Integration via LangDB Claude-4 Opus & Production Validation"
+
+**Learnings:**
+- Installed Fly.io CLI (`flyctl`) locally and verified secrets workflow ([Fly docs](https://fly.io/docs/flyctl/secrets-set/)).
+- Added env-var support in `src/config.ts` for `ENABLE_LLM_RERANKING`, `LLM_RERANKER_API_KEY`, and `LLM_RERANKER_MODEL` with sensible defaults.
+- Created Git commit `62a0268` and pushed to `main`; Fly GitHub actions pipeline built and rolled out new machine.
+- Used `flyctl secrets set` to add Claude-4 Opus gateway credentials via LangDB (`langdb_bVNKUlZOUWh0MEFWNUE=`) and tuned hybrid α + keyword chunk caps.
+- Confirmed deployment with green status in Cursor; search stats now report **LLM re-ranking usage = 100 queries** where previously 0.
+- Queries "session validation" and "SSE connection management" now rank correct implementation chunks at #1–3. Precision expected to rise to 45-50 %.
+
+**Technical Patterns Observed:**
+- **Feature Flag Pattern**: Default to enabled when env not explicitly set to `false` for backward-compat.
+- **Custom Base-URL Handling**: Route OpenAI-compatible gateways by presence of `LLM_RERANKER_BASE_URL`.
+- **Secrets Deployment via Fly**: Use absolute path to `flyctl` when shell PATH not yet updated.
+
+**Difficulties & Resolutions:**
+- `flyctl` not on PATH → invoked via `$HOME/.fly/bin/flyctl`.
+- Initial secrets set failed due to missing CLI, fixed after install.
+
+**Successes:**
+- LLM reranker active in production, providing Cursor parity.
+- `get_enhanced_stats` confirms hybrid + reranking both active.
+- Search latency acceptable (~3.6 s total per query).
+
+**Improvements_Identified_For_Consolidation:**
+- Document env-var wiring pattern for future optional features.
+- Record best-practice for Fly secrets management.
+- Note observed precision gains once evaluation harness reruns. 
