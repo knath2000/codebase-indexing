@@ -410,10 +410,17 @@ export class IndexingService extends EventEmitter {
   private async embedAndStore(chunks: CodeChunk[]): Promise<void> {
     console.log(`🚀 Starting embedAndStore with ${chunks.length} chunks`);
     
-    if (chunks.length === 0) {
-      console.log('❌ No chunks to process, returning early');
+    // Filter out any null/undefined chunks early
+    const validChunksOnly = chunks.filter(chunk => chunk && chunk.content && chunk.content.trim().length > 0);
+    console.log(`🔍 After filtering: ${validChunksOnly.length} valid chunks (${chunks.length - validChunksOnly.length} filtered out)`);
+    
+    if (validChunksOnly.length === 0) {
+      console.log('❌ No valid chunks to process, returning early');
       return;
     }
+    
+    // Use filtered chunks for the rest of the method
+    chunks = validChunksOnly;
 
     console.log('📊 Setting status to EMBEDDING');
     this.progress.status = IndexingStatus.EMBEDDING;
@@ -425,9 +432,17 @@ export class IndexingService extends EventEmitter {
 
     for (let i = 0; i < chunks.length; i += batchSize) {
       const batch = chunks.slice(i, i + batchSize);
-      const texts = batch.map(chunk => chunk.content);
       
-      console.log(`🔄 Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(chunks.length/batchSize)} with ${batch.length} chunks`);
+      // Filter out any null/undefined chunks that might have slipped through
+      const validChunks = batch.filter(chunk => chunk && chunk.content);
+      if (validChunks.length === 0) {
+        console.log(`⚠️ Skipping batch ${Math.floor(i/batchSize) + 1} - no valid chunks`);
+        continue;
+      }
+      
+      const texts = validChunks.map(chunk => chunk.content);
+      
+      console.log(`🔄 Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(chunks.length/batchSize)} with ${validChunks.length} valid chunks (${batch.length} total)`);
       console.log(`📝 First chunk preview: ${texts[0]?.substring(0, 100)}...`);
       
       try {
@@ -440,8 +455,8 @@ export class IndexingService extends EventEmitter {
         );
         console.log(`✅ Received ${vectors.length} embeddings from Voyage API`);
 
-        for (let j = 0; j < batch.length; j++) {
-          const chunk = batch[j];
+        for (let j = 0; j < validChunks.length; j++) {
+          const chunk = validChunks[j];
           const vector = vectors[j];
           
           const payload: EmbeddingPayload = {
@@ -466,7 +481,7 @@ export class IndexingService extends EventEmitter {
           });
         }
 
-        this.progress.processedChunks += batch.length;
+        this.progress.processedChunks += validChunks.length;
         this.emit('progress', this.progress);
         console.log(`📈 Progress: ${this.progress.processedChunks}/${chunks.length} chunks processed`);
       } catch (error) {
