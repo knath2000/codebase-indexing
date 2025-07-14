@@ -262,6 +262,9 @@ JSON Response:`;
     const data = await response.json() as any;
       const apiCallDuration = Date.now() - apiCallStartTime;
       console.log(`[LLMReranker] Anthropic API call completed in ${apiCallDuration}ms`);
+      // Additional debug information to verify LangDB gateway output
+      console.debug(`[LLMReranker] Anthropic raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
+      this.totalRequests++;
     return data.content[0].text;
     } finally {
       clearTimeout(timeout);
@@ -308,6 +311,9 @@ JSON Response:`;
     const data = await response.json() as any;
       const apiCallDuration = Date.now() - apiCallStartTime;
       console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms`);
+      // Additional debug information to verify LangDB gateway output
+      console.debug(`[LLMReranker] OpenAI raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
+      this.totalRequests++;
     return data.choices[0].message.content;
     } finally {
       clearTimeout(timeout);
