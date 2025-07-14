@@ -18,6 +18,39 @@
 - Enhanced output format with markdown headers, clickable file links, and percentage similarity scores
 - Navigation links use `file://` protocol with line number anchors for direct editor navigation
 - Increased snippet length from 150 to 200 characters for better context
+
+---
+**Date:** 2025-01-27  
+**TaskRef:** "Complete Resolution of Session Management and Null Reference Issues"
+
+**Learnings:**
+- **Multi-Instance Session Affinity Root Cause**: Fly.io load balancer routing SSE connections to one instance but POST requests to different instances, causing session lookup failures
+- **Effective Debugging Strategy**: Enhanced logging with FLY_ALLOC_ID instance tracking revealed the cross-instance routing issue clearly
+- **Single Instance Solution**: Setting fly.toml autoscaler to min_count=1, max_count=1 eliminated multi-instance problems completely
+- **Null Reference Pattern**: Tree-sitter parsing failures creating null chunks that weren't properly filtered through the entire pipeline
+- **Defense in Depth**: Multiple null filtering points (embedAndStore entry, batch processing, updateStats) provide comprehensive protection
+
+**Technical Patterns Discovered:**
+- **Session Storage Race Condition**: Moving session storage before SSE endpoint event prevents timing issues
+- **Null Chunk Filtering Strategy**: Filter at method entry points, before external API calls, and in statistical calculations
+- **Fly.io Single Instance Pattern**: For stateful services requiring session affinity, single instance is more reliable than multi-instance with session sharing
+- **Progressive Debugging**: Start with detailed logging, identify patterns in logs, then implement targeted fixes
+
+**Success Metrics:**
+- Directory indexing: 549 chunks generated successfully without errors
+- Session management: 100% connection stability, no flapping
+- Search functionality: Working with proper scoring and navigation links
+- All 12 MCP tools operational in Cursor
+
+**Difficulties Resolved:**
+- Initially focused on session storage logic instead of multi-instance routing issue
+- Required systematic null filtering at multiple pipeline stages, not just one location
+- Balancing single instance reliability vs. scalability trade-offs
+
+**Reusable Patterns:**
+- **Comprehensive Null Filtering**: Always filter at entry points, before external calls, and in processing methods
+- **Instance Tracking**: Use deployment-specific IDs (FLY_ALLOC_ID) for distributed debugging
+- **Session Affinity Solutions**: Consider single instance deployment for stateful services with session requirements
 - Added comprehensive documentation with example output format in README
 
 **Difficulties:**

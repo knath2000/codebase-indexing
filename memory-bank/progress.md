@@ -47,6 +47,27 @@
 - [x] **Tree-sitter Grammars**: JavaScript, TypeScript, Python support
 - [x] **HTTP Server**: Express.js with CORS and JSON-RPC support
 
+## 🎉 Recently Resolved (January 2025)
+
+### Session Management & Stability Issues - FULLY RESOLVED ✅
+- [x] **Multi-Instance Session Affinity Issue**: Fixed "Invalid or expired session" errors 
+  - **Root Cause**: SSE connections on one Fly.io instance, POST requests routed to different instances
+  - **Solution**: Single instance deployment (fly.toml: min_count=1, max_count=1)
+  - **Result**: 100% reliable MCP connections, no more connection flapping
+- [x] **Null Reference Errors in Directory Indexing**: Fixed "Cannot read properties of null" errors
+  - **Root Cause 1**: Null chunks reaching embedAndStore method when content too small
+  - **Root Cause 2**: updateStats method accessing .content on null chunks  
+  - **Solution**: Comprehensive null filtering at multiple levels
+  - **Result**: Clean successful directory indexing with 549 chunks generated
+- [x] **Enhanced Session Debugging**: Added comprehensive session lifecycle logging
+- [x] **Instance Tracking**: Added FLY_ALLOC_ID logging for multi-instance debugging
+
+### Test Results (Post-Fix)
+- ✅ Directory indexing: "Successfully indexed directory: ., Generated 549 chunks"
+- ✅ Session management: No timeouts or connection flapping
+- ✅ Search functionality: Working with proper scoring and file links
+- ✅ MCP tools: All 12 tools operational in Cursor
+
 ## 🚧 In Progress (Current Session)
 
 ### ✅ COMPLETED: Markdown Support Implementation

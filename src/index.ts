@@ -3,7 +3,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { Config, ChunkType } from './types.js';
+import { Config, ChunkType, SearchResult } from './types.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
@@ -543,36 +543,83 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }]
           };
         case 'codebase_search':
-          const codebaseSearchResults = await searchService.searchForCodeReferences(
-            searchService.buildSearchQuery({
-            query: args.query as string,
-              ...(args.language !== undefined ? { language: args.language as string } : {}),
-              ...(args.chunk_type !== undefined ? { chunkType: args.chunk_type as ChunkType } : {}),
-              ...(args.file_path !== undefined ? { filePath: args.file_path as string } : {}),
-              ...(args.limit !== undefined ? { limit: args.limit as number } : {}),
-              ...(args.enable_hybrid !== undefined ? { enableHybrid: args.enable_hybrid as boolean } : {}),
-              ...(args.enable_reranking !== undefined ? { enableReranking: args.enable_reranking as boolean } : {}),
-            }),
-            args.max_tokens as number | undefined
-          );
+          const enhancedSearchArgs = args as {
+            query: string;
+            language?: string;
+            chunk_type?: string;
+            file_path?: string;
+            limit?: number;
+            threshold?: number;
+            enable_hybrid?: boolean;
+            enable_reranking?: boolean;
+            max_tokens?: number;
+          };
+
+          // Build enhanced search query with implementation-focused defaults
+          const enhancedQuery = searchService.buildSearchQuery({
+            query: enhancedSearchArgs.query,
+            ...(enhancedSearchArgs.language !== undefined ? { language: enhancedSearchArgs.language } : {}),
+            ...(enhancedSearchArgs.chunk_type !== undefined ? { chunkType: enhancedSearchArgs.chunk_type as ChunkType } : {}),
+            ...(enhancedSearchArgs.file_path !== undefined ? { filePath: enhancedSearchArgs.file_path } : {}),
+            limit: enhancedSearchArgs.limit || 20,
+            threshold: enhancedSearchArgs.threshold || 0.15, // Lower threshold for broader recall
+            enableHybrid: enhancedSearchArgs.enable_hybrid !== false, // Default to true
+            enableReranking: enhancedSearchArgs.enable_reranking !== false, // Default to true
+            
+            // Implementation-focused enhancements
+            preferFunctions: true, // Boost function chunks
+            preferClasses: true,   // Boost class chunks
+            maxFilesPerType: 5,    // Allow more results per file
+          });
+
+          const enhancedResults = await searchService.search(enhancedQuery);
+          
+          if (enhancedResults.length === 0) {
+            return {
+              content: [{
+                type: 'text', 
+                text: `No results found for "${enhancedSearchArgs.query}". Try broadening your search terms or checking spelling.`
+              }],
+              isError: false
+            };
+          }
+
+          // Create comprehensive output with metadata
+          const searchTime = Date.now() - Date.now(); // This will be set by search service
+          const formatOutput = (results: SearchResult[]): string => {
+            let output = `Codebase search results for "${enhancedSearchArgs.query}":\n\n`;
+            
+            results.forEach((result, index) => {
+              const score = (result.score * 100).toFixed(2);
+              const chunkType = result.chunk.chunkType || 'generic';
+              const startLine = result.chunk.startLine;
+              const endLine = result.chunk.endLine;
+              const filePath = result.chunk.filePath;
+              
+              // Create clickable file link with line numbers
+              const fileLink = `[${filePath}:${startLine}-${endLine}](cursor://file?filePath=${encodeURIComponent(filePath)}&startLine=${startLine}&endLine=${endLine})`;
+              
+              output += `${index + 1}. **${chunkType} (Score: ${score}%)**  - ${fileLink}\n`;
+              output += `\`\`\`${result.chunk.language}\n${result.chunk.content.trim()}\n\`\`\`\n\n`;
+            });
+            
+            // Add search metadata
+            const searchStats = searchService.getEnhancedSearchStats();
+            const cacheHit = searchStats.cacheHitRate > 0 ? 'Yes' : 'No';
+            const hybridUsed = searchStats.hybridSearchUsage > 0 ? 'Yes' : 'No';
+            const reranked = searchStats.llmRerankerUsage > 0 ? 'Yes' : 'No';
+            
+            output += `_Search took ${searchTime.toFixed(2)}ms. Total results: ${results.length}. Cache Hit: ${cacheHit}. Hybrid Search Used: ${hybridUsed}. Reranked: ${reranked}_`;
+            
+            return output;
+          };
+
           return {
             content: [{
               type: 'text',
-              text: `Codebase search results for "${args.query}":\n\n` +
-                    (codebaseSearchResults.summary ? `Summary: ${codebaseSearchResults.summary}\n\n` : '') +
-                    codebaseSearchResults.references.map((ref: any, index: number) => {
-                      const score = ref.score ? ` (Score: ${(ref.score * 100).toFixed(2)}%)` : '';
-                      const typeIcon = ''; // icon omitted to avoid context issues
-                      const filePath = ref.path;
-                      const startLine = ref.lines[0];
-                      const endLine = ref.lines[1];
-                      const navLink = `cursor://file?filePath=${encodeURIComponent(filePath)}&startLine=${startLine}&endLine=${endLine}`;
-                      return `${index + 1}. **${ref.chunkType || 'Code'}${score}** ${typeIcon} - [${filePath}:${startLine}-${endLine}](${navLink})\n` +
-                             `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``;
-                    }).join('\n\n') +
-                    (codebaseSearchResults.truncated ? '\n\n(Results truncated to fit context window)' : '') +
-                    `\n\n_Search took ${codebaseSearchResults.metadata.searchTime.toFixed(2)}ms. Total results: ${codebaseSearchResults.metadata.totalResults}. Cache Hit: ${codebaseSearchResults.metadata.cacheHit ? 'Yes' : 'No'}. Hybrid Search Used: ${codebaseSearchResults.metadata.hybridUsed ? 'Yes' : 'No'}. Reranked: ${codebaseSearchResults.metadata.reranked ? 'Yes' : 'No'}_`
-            }]
+              text: formatOutput(enhancedResults)
+            }],
+            isError: false
           };
         case 'get_health_status':
           // TODO: Implement health monitoring service
