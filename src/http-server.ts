@@ -139,7 +139,6 @@ app.get('/mcp', async (_req: Request, res: Response) => {
       lastHeartbeat: new Date(),
       sseResponse: res
     };
-    activeSessions.set(sessionId, session);
     
     // Set SSE headers
     res.writeHead(200, {
@@ -150,11 +149,16 @@ app.get('/mcp', async (_req: Request, res: Response) => {
       'Access-Control-Allow-Headers': 'Cache-Control'
     });
     
+    // Store session BEFORE sending endpoint event to prevent race condition
+    activeSessions.set(sessionId, session);
     console.log(`SSE connection established with session: ${sessionId}`);
+    console.log(`Total active sessions: ${activeSessions.size}`);
+    console.log(`Session stored with keys:`, Array.from(activeSessions.keys()));
     
     // Send the endpoint event with the message endpoint URL and session ID
     res.write(`event: endpoint\n`);
     res.write(`data: /message?sessionId=${sessionId}\n\n`);
+    console.log(`Sent endpoint event with URL: /message?sessionId=${sessionId}`);
     
     // Keep connection alive with periodic comments (standard SSE keepalive)
     const keepAliveInterval = setInterval(() => {
@@ -173,13 +177,16 @@ app.get('/mcp', async (_req: Request, res: Response) => {
     res.on('close', () => {
       clearInterval(keepAliveInterval);
       activeSessions.delete(sessionId);
-      console.log(`SSE connection closed for session: ${sessionId}`);
+      console.log(`🔌 SSE connection closed for session: ${sessionId}`);
+      console.log(`Remaining active sessions: ${activeSessions.size}`);
     });
     
     res.on('error', (error) => {
-      console.error(`SSE connection error for session ${sessionId}:`, error);
+      console.error(`💥 SSE connection error for session ${sessionId}:`, error);
       clearInterval(keepAliveInterval);
       activeSessions.delete(sessionId);
+      console.log(`Session ${sessionId} cleaned up due to error`);
+      console.log(`Remaining active sessions: ${activeSessions.size}`);
     });
     
   } catch (error) {
@@ -198,10 +205,15 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
     }
     
     console.log('Received POST request body:', JSON.stringify(req.body, null, 2));
+    console.log('Request URL:', req.url);
+    console.log('Query params:', req.query);
     
     // Get session ID from query params
     const sessionId = req.query.sessionId as string;
+    console.log(`Extracted sessionId: "${sessionId}"`);
+    
     if (!sessionId) {
+      console.log('❌ Missing sessionId parameter');
       res.status(400).json({
         jsonrpc: '2.0',
         id: null,
@@ -213,9 +225,16 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
       return;
     }
     
+    console.log(`Looking up session: ${sessionId}`);
+    console.log(`Available sessions: [${Array.from(activeSessions.keys()).join(', ')}]`);
+    console.log(`Total active sessions: ${activeSessions.size}`);
+    
     // Find the session
     const session = activeSessions.get(sessionId);
-    if (!session || !session.sseResponse) {
+    console.log(`Session lookup result:`, session ? 'FOUND' : 'NOT FOUND');
+    
+    if (!session) {
+      console.log('❌ Session not found in activeSessions map');
       res.status(400).json({
         jsonrpc: '2.0',
         id: null,
@@ -226,6 +245,41 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
       });
       return;
     }
+    
+    if (!session.sseResponse) {
+      console.log('❌ Session found but sseResponse is missing');
+      res.status(400).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32600,
+          message: 'Invalid or expired session - no SSE response'
+        }
+      });
+      return;
+    }
+    
+    if (session.sseResponse.destroyed) {
+      console.log('❌ Session found but sseResponse is destroyed');
+      res.status(400).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: {
+          code: -32600,
+          message: 'Invalid or expired session - SSE response destroyed'
+        }
+      });
+      return;
+    }
+    
+    console.log('✅ Session validation passed');
+    console.log('Session details:', {
+      id: session.id,
+      startTime: session.startTime,
+      lastHeartbeat: session.lastHeartbeat,
+      hasSSEResponse: !!session.sseResponse,
+      sseDestroyed: session.sseResponse?.destroyed
+    });
     
     const { jsonrpc, id, method, params } = req.body;
     
