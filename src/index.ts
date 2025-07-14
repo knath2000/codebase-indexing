@@ -264,6 +264,10 @@ export const TOOL_DEFINITIONS = [
         enable_reranking: {
           type: 'boolean',
           description: 'Enable LLM re-ranking of results'
+        },
+        prefer_implementation: {
+          type: 'boolean',
+          description: 'Prefer implementation code over documentation (default: true)'
         }
       },
       required: ['query']
@@ -553,6 +557,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             enable_hybrid?: boolean;
             enable_reranking?: boolean;
             max_tokens?: number;
+            prefer_implementation?: boolean;
           };
 
           // Build enhanced search query with implementation-focused defaults
@@ -570,6 +575,7 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             preferFunctions: true, // Boost function chunks
             preferClasses: true,   // Boost class chunks
             maxFilesPerType: 5,    // Allow more results per file
+            preferImplementation: enhancedSearchArgs.prefer_implementation !== false, // Default to true
           });
 
           const enhancedResults = await searchService.search(enhancedQuery);

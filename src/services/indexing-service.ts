@@ -471,7 +471,8 @@ export class IndexingService extends EventEmitter {
             moduleName: chunk.moduleName || undefined,
             contentHash: chunk.contentHash,
             tokenCount: this.estimateTokenCount(chunk.content),
-            metadata: chunk.metadata
+            metadata: chunk.metadata,
+            fileKind: this.getFileKind(chunk.filePath)
           };
 
           embeddings.push({
@@ -609,6 +610,31 @@ export class IndexingService extends EventEmitter {
   private estimateTokenCount(content: string): number {
     // Rough approximation: 1 token ≈ 4 characters for code
     return Math.ceil(content.length / 4);
+  }
+
+  /**
+   * Determines if a file contains implementation code or documentation
+   */
+  private getFileKind(filePath: string): 'code' | 'docs' {
+    const extension = filePath.split('.').pop()?.toLowerCase() || '';
+    const fileName = filePath.toLowerCase();
+    
+    // Documentation file extensions and patterns
+    const docExtensions = ['md', 'txt', 'rst', 'adoc', 'asciidoc'];
+    const docPatterns = ['readme', 'changelog', 'license', 'contributing', 'docs/', 'documentation/', 'memory-bank/'];
+    
+    // Check extension
+    if (docExtensions.includes(extension)) {
+      return 'docs';
+    }
+    
+    // Check file path patterns
+    if (docPatterns.some(pattern => fileName.includes(pattern))) {
+      return 'docs';
+    }
+    
+    // Default to code for programming language files
+    return 'code';
   }
 
   /**

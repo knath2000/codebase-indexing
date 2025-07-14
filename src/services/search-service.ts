@@ -77,6 +77,7 @@ export class SearchService {
     maxFilesPerType?: number;
     preferFunctions?: boolean;
     preferClasses?: boolean;
+    preferImplementation?: boolean;
   }): SearchQuery {
     const searchQuery: SearchQuery = {
       query: args.query,
@@ -94,6 +95,7 @@ export class SearchService {
     if (args.maxFilesPerType !== undefined) { searchQuery.maxFilesPerType = args.maxFilesPerType; }
     if (args.preferFunctions !== undefined) { searchQuery.preferFunctions = args.preferFunctions; }
     if (args.preferClasses !== undefined) { searchQuery.preferClasses = args.preferClasses; }
+    if (args.preferImplementation !== undefined) { searchQuery.preferImplementation = args.preferImplementation; }
 
     return searchQuery;
   }
@@ -194,6 +196,13 @@ export class SearchService {
       } else {
         // If hybrid disabled, fall back to dense, then sparse as secondary
         finalResults = denseResults.length > 0 ? denseResults : sparseResults;
+      }
+
+      // Apply implementation boosting if enabled (default true)
+      if (query.preferImplementation !== false) {
+        console.time('[SearchService] Implementation boosting');
+        finalResults = this.boostImplementationResults(finalResults);
+        console.timeEnd('[SearchService] Implementation boosting');
       }
 
       // Apply metadata boosting
@@ -648,6 +657,55 @@ export class SearchService {
 
   public clearCaches(): void {
     this.searchCache.clear();
+  }
+
+  /**
+   * Boost implementation code results over documentation
+   */
+  private boostImplementationResults(results: SearchResult[]): SearchResult[] {
+    const IMPLEMENTATION_BOOST = 1.15; // 15% boost for implementation code
+    const DOCS_PENALTY = 0.95; // 5% penalty for documentation
+    
+    const boostedResults = results.map(result => {
+      const chunkType = result.chunk.chunkType;
+      const filePath = result.chunk.filePath.toLowerCase();
+      
+      // Determine fileKind from file path (same logic as in indexing)
+      const extension = filePath.split('.').pop() || '';
+      const docExtensions = ['md', 'txt', 'rst', 'adoc', 'asciidoc'];
+      const docPatterns = ['readme', 'changelog', 'license', 'contributing', 'docs/', 'documentation/', 'memory-bank/'];
+      
+      const isDocumentation = docExtensions.includes(extension) || 
+                             docPatterns.some(pattern => filePath.includes(pattern));
+      
+      // Boost score based on file type and chunk type
+      let boostFactor = 1.0;
+      
+      // Primary boost: implementation code vs documentation
+      if (!isDocumentation) {
+        boostFactor *= IMPLEMENTATION_BOOST;
+      } else {
+        boostFactor *= DOCS_PENALTY;
+      }
+      
+      // Secondary boost: prefer function and class chunks
+      if (chunkType === ChunkType.FUNCTION || chunkType === ChunkType.CLASS || chunkType === ChunkType.METHOD) {
+        boostFactor *= 1.1; // Additional 10% boost for code entities
+      }
+      
+      // Apply the boost
+      const boostedScore = result.score * boostFactor;
+      
+      console.log(`🔧 [SearchService] Boosting ${result.chunk.filePath} (${chunkType}): ${result.score.toFixed(3)} → ${boostedScore.toFixed(3)} (factor: ${boostFactor.toFixed(2)})`);
+      
+      return {
+        ...result,
+        score: boostedScore
+      };
+    });
+    
+    // Re-sort by the new boosted scores
+    return boostedResults.sort((a, b) => b.score - a.score);
   }
 
   /**

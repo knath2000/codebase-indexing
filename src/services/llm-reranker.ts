@@ -169,11 +169,14 @@ ${candidates}
 INSTRUCTIONS:
 1. Analyze each candidate's relevance to the query
 2. Consider code context, function/class names, and actual implementation
-3. Prioritize exact matches over partial matches
-4. Consider code quality and completeness
-5. Return a JSON array with candidate indices in order of relevance (most relevant first)
-6. Include only the top ${request.maxResults} most relevant candidates
-7. Provide a brief explanation for your ranking
+3. **STRONGLY PREFER implementation code (functions, classes, methods) over documentation**
+4. Prioritize TypeScript/JavaScript files over markdown documentation files
+5. Boost candidates with chunkType 'function', 'class', or 'method'
+6. Prioritize exact matches over partial matches
+7. Consider code quality and completeness
+8. Return a JSON array with candidate indices in order of relevance (most relevant first)
+9. Include only the top ${request.maxResults} most relevant candidates
+10. Provide a brief explanation for your ranking
 
 Expected JSON format:
 {

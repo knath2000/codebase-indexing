@@ -138,6 +138,13 @@ export class QdrantVectorClient {
       });
       console.log(`✅ [Qdrant] Created filePath index for file-specific searches`);
       
+      // Index for fileKind filtering (code vs docs)
+      await this.client.createPayloadIndex(this.collectionName, {
+        field_name: 'fileKind',
+        field_schema: 'keyword'
+      });
+      console.log(`✅ [Qdrant] Created fileKind index for distinguishing code vs documentation`);
+      
       console.log(`🎉 [Qdrant] All payload indexes created successfully - collection ready for @codebase-style filtered searches!`);
       
     } catch (error) {

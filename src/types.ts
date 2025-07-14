@@ -154,6 +154,7 @@ export interface EmbeddingPayload {
   parentChunkId?: string;
   childChunkIds?: string[];
   complexity?: number;
+  fileKind: 'code' | 'docs'; // Distinguishes implementation code from documentation
   [key: string]: unknown;
 }
 
@@ -174,6 +175,8 @@ export interface SearchQuery {
   preferFunctions?: boolean;
   /** Boost classes when true (overrides automatic heuristics). */
   preferClasses?: boolean;
+  /** Prefer implementation code over documentation (default true). */
+  preferImplementation?: boolean;
 }
 
 // Cursor-style code reference format
