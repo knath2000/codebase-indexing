@@ -38,6 +38,7 @@ export const ConfigSchema = z.object({
     llmRerankerModel: z.string().default('claude-3-haiku-20240307'),
     llmRerankerApiKey: z.string().optional(),
     llmRerankerTimeoutMs: z.number().default(45000),
+    llmRerankerBaseUrl: z.string().optional(),
     keywordSearchTimeoutMs: z.number().default(10000),
     keywordSearchMaxChunks: z.number().default(20000),
     searchCacheTTL: z.number().default(300), // 5 minutes

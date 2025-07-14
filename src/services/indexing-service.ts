@@ -670,9 +670,9 @@ export class IndexingService extends EventEmitter {
     // Find largest file - only if we have valid chunks
     if (validChunks.length > 0) {
       const largestChunk = validChunks.reduce((largest, chunk) => 
-        chunk.content.length > largest.content.length ? chunk : largest
-      );
-      this.stats.largestFile = largestChunk.filePath;
+      chunk.content.length > largest.content.length ? chunk : largest
+    );
+    this.stats.largestFile = largestChunk.filePath;
     } else {
       this.stats.largestFile = 'N/A';
     }

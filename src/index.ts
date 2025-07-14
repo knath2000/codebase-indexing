@@ -581,9 +581,9 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
           const enhancedResults = await searchService.search(enhancedQuery);
           
           if (enhancedResults.length === 0) {
-            return {
-              content: [{
-                type: 'text', 
+          return {
+            content: [{
+              type: 'text',
                 text: `No results found for "${enhancedSearchArgs.query}". Try broadening your search terms or checking spelling.`
               }],
               isError: false
