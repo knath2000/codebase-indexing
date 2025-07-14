@@ -119,7 +119,8 @@ export function loadConfig(): Config {
     llmRerankerTimeoutMs: parseInt(process.env.LLM_RERANKER_TIMEOUT_MS || '25000'),
     llmRerankerBaseUrl: process.env.LLM_RERANKER_BASE_URL,
     keywordSearchTimeoutMs: parseInt(process.env.KEYWORD_SEARCH_TIMEOUT_MS || '10000'),
-    keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000')
+    keywordSearchMaxChunks: parseInt(process.env.KEYWORD_SEARCH_MAX_CHUNKS || '20000'),
+    hybridSearchAlpha: parseFloat(process.env.HYBRID_SEARCH_ALPHA || '0.7')
   };
 
   // Validate configuration
@@ -188,6 +189,10 @@ export function validateConfig(config: Config): void {
     throw new Error('Keyword search max chunks must be greater than 0');
   }
 
+  if (config.hybridSearchAlpha <= 0 || config.hybridSearchAlpha > 1) {
+    throw new Error('Hybrid search alpha must be between 0 (exclusive) and 1 (inclusive)');
+  }
+
   // Privacy validation logging
   console.log(`🔒 Privacy Settings Validated:`);
   console.log(`   - Chunk Size: ${config.chunkSize} chars (100-1000 range)`);
@@ -213,4 +218,5 @@ export function printConfigSummary(config: Config): void {
   console.log(`  Exclude Patterns: ${config.excludePatterns.join(', ')}`);
   console.log(`  Keyword Search Timeout: ${config.keywordSearchTimeoutMs} ms`);
   console.log(`  Keyword Search Max Chunks: ${config.keywordSearchMaxChunks}`);
+  console.log(`  Hybrid Search α: ${config.hybridSearchAlpha}`);
 } 
