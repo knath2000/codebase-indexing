@@ -615,9 +615,12 @@ export class IndexingService extends EventEmitter {
    * Update statistics
    */
   private updateStats(chunks: CodeChunk[]): void {
+    // Filter out null chunks that might have been created during parsing
+    const validChunks = chunks.filter(chunk => chunk && chunk.content != null);
+    
     this.stats.totalFiles = this.progress.processedFiles;
-    this.stats.totalChunks = chunks.length;
-    this.stats.totalSize = chunks.reduce((sum, chunk) => sum + chunk.content.length, 0);
+    this.stats.totalChunks = validChunks.length;
+    this.stats.totalSize = validChunks.reduce((sum, chunk) => sum + chunk.content.length, 0);
     this.stats.averageChunkSize = this.stats.totalSize / this.stats.totalChunks || 0;
     this.stats.lastIndexed = new Date();
     this.stats.indexingDuration = Date.now() - this.progress.startTime.getTime();
@@ -626,22 +629,26 @@ export class IndexingService extends EventEmitter {
 
     // Language distribution
     this.stats.languageDistribution = {};
-    chunks.forEach(chunk => {
+    validChunks.forEach(chunk => {
       this.stats.languageDistribution[chunk.language] = 
         (this.stats.languageDistribution[chunk.language] || 0) + 1;
     });
 
     // Chunk type distribution
     this.stats.chunkTypeDistribution = {};
-    chunks.forEach(chunk => {
+    validChunks.forEach(chunk => {
       this.stats.chunkTypeDistribution[chunk.chunkType] = 
         (this.stats.chunkTypeDistribution[chunk.chunkType] || 0) + 1;
     });
 
-    // Find largest file
-    const largestChunk = chunks.reduce((largest, chunk) => 
-      chunk.content.length > largest.content.length ? chunk : largest
-    );
-    this.stats.largestFile = largestChunk.filePath;
+    // Find largest file - only if we have valid chunks
+    if (validChunks.length > 0) {
+      const largestChunk = validChunks.reduce((largest, chunk) => 
+        chunk.content.length > largest.content.length ? chunk : largest
+      );
+      this.stats.largestFile = largestChunk.filePath;
+    } else {
+      this.stats.largestFile = 'N/A';
+    }
   }
 } 

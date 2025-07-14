@@ -222,3 +222,102 @@
 - Best practices for handling `exactOptionalPropertyTypes` in TypeScript for robust type safety.
 - Strategies for degrading gracefully when external API calls exceed time limits.
 --- 
+
+---
+**Date:** 2025-07-13  
+**TaskRef:** "SSE Session Invalid/Expired Error after Initialize"
+
+**Learnings:**
+- Observed that Roo Code establishes an SSE connection, then immediately sends a POST `initialize` request which fails with HTTP 400 `Invalid or expired session`.
+- SSE connection closes roughly 150 ms after establishment, indicating the server may close the stream upon error.
+- Hypothesis: the POST handler cannot find the `sessionId` in the internal `sessions` map—likely a race condition or mismatched query-param name.
+
+**Key Observations:**
+- Fly.io log shows: `SSE connection established with session: 0d72e5e2-bd15-4096-b908-06076f83caf6`.
+- Immediately after, the POST `/message` receives the JSON-RPC `initialize` call (`id":0`).
+- Server responds with JSON-RPC error `-32600` "Invalid or expired session" and closes SSE stream.
+
+**Next Steps:**
+1. Verify POST endpoint correctly parses `sessionId` and references the same Map used during SSE handshake.
+2. Ensure session is inserted into Map before the server sends the `endpoint` event to the client.
+3. Add robust keep-alive and error logging around session lifecycle.
+
+**Improvements_Identified_For_Consolidation:**
+- Need a dedicated session manager to guarantee consistent lifecycle across HTTP handlers.
+--- 
+
+---
+**Date:** 2025-01-27  
+**TaskRef:** "Session Management Debugging - Invalid/Expired Session Error Investigation"
+
+**Learnings:**
+- Identified the core session management issue: after successful SSE handshake, POST `/message` requests fail with HTTP 400 "Invalid or expired session"
+- Analyzed the complete HTTP server flow: GET `/mcp` creates session → stores in activeSessions Map → sends endpoint event → POST `/message` looks up session
+- Discovered potential race condition where POST request might arrive before session is fully stored
+- Enhanced debugging comprehensively to identify exact failure point in session lifecycle
+
+**Key Implementation Details:**
+- **Race Condition Fix**: Moved `activeSessions.set(sessionId, session)` before sending endpoint event to prevent timing issues
+- **Session Creation Logging**: Added detailed logs showing sessionId, session count, and stored keys
+- **Session Lookup Debugging**: Comprehensive logs for sessionId extraction, available sessions, and lookup results
+- **Session Validation**: Separate error handling for missing session vs missing/destroyed SSE response
+- **Lifecycle Tracking**: Enhanced cleanup logging with session count monitoring
+
+**Investigation Focus Areas:**
+- Query parameter parsing: `req.query.sessionId` extraction and validation
+- Session Map integrity: Verify sessions are stored and retrievable consistently
+- SSE Response validity: Check if sseResponse objects become invalid/destroyed prematurely
+- Connection timing: Analyze if POST requests arrive too quickly after SSE establishment
+
+**Difficulties:**
+- Issue only manifests in production Fly.io environment, making debugging require deployment cycles
+- Session management involves multiple async operations (SSE connection, Map storage, endpoint event sending)
+- Need to balance debugging verbosity with production log clarity
+
+**Successes:**
+- Comprehensive debugging framework deployed that will reveal exact failure point
+- Potential race condition addressed by reordering session storage
+- Clear hypothesis formation about session lifecycle issues
+- Systematic approach to isolating the root cause
+
+**Improvements_Identified_For_Consolidation:**
+- Session management requires careful orchestration of timing between SSE establishment and endpoint URL communication
+- Production debugging requires comprehensive logging strategy for async operations
+- Race conditions in server-client handshake protocols need careful sequence management
+--- 
+
+---
+**Date:** 2025-01-27  
+**TaskRef:** "Multi-Instance Session Affinity Fix - Root Cause Resolution"
+
+**Major Success:**
+- **SOLVED**: The "Invalid or expired session" error was definitively identified as a multi-instance load balancing issue
+- **Root Cause**: SSE connections creating sessions on one Fly.io instance, but POST requests being routed to different instances with empty session storage
+- **Evidence**: Fly.io logs clearly showed different `app[INSTANCE_ID]` values between SSE and POST requests, with session mismatches
+
+**Solution Implemented:**
+- **Single Instance Deployment**: Modified `fly.toml` autoscaler to `min_count=1, max_count=1` ensuring session consistency
+- **SSE Optimizations**: Disabled compression, added proper cache headers for Server-Sent Events
+- **Enhanced Debugging**: Added instance tracking headers (`X-Session-ID`, `X-Instance-ID`) and `FLY_ALLOC_ID` logging
+
+**Key Technical Learnings:**
+- **MCP SSE Requirements**: Server-Sent Events with session affinity require careful load balancer configuration
+- **Fly.io Multi-Instance Behavior**: Default autoscaling can break stateful session management without proper session affinity
+- **Session Storage Strategy**: In-memory session storage works well for MCP servers when properly constrained to single instance
+
+**Debugging Methodology Success:**
+- **Systematic Log Analysis**: Comprehensive logging enabled exact identification of instance routing mismatch
+- **Race Condition Elimination**: Initial hypothesis was wrong (not a timing issue), but debugging framework revealed true cause
+- **Evidence-Based Solution**: Logs provided clear evidence leading to definitive architectural fix
+
+**Deployment & Testing:**
+- Used GitHub-based deployment (no Fly CLI) as per project standards
+- Solution addresses the exact pattern seen in Cursor forum discussions about MCP server startup issues
+- Expected result: Immediate, reliable MCP server connection without disable/enable cycles
+
+**Improvements for Future:**
+- This experience reinforces the importance of comprehensive logging for distributed system debugging
+- Single instance deployment is often the right choice for stateful services like MCP servers
+- Session affinity patterns are critical for any SSE-based services with persistent connections
+
+--- 

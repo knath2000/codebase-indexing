@@ -176,6 +176,7 @@
 - **Large File Handling**: Memory usage can spike with very large files
 - **Error Messages**: Some error messages could be more descriptive
 - **Logging Verbosity**: Needs tunable logging levels
+- **Invalid Session Error**: Roo Code receives HTTP 400 "Invalid or expired session" after `initialize` POST; investigate session management bug
 
 ### Technical Debt
 - **Test Coverage**: Need comprehensive unit and integration tests

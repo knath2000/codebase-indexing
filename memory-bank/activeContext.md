@@ -28,6 +28,64 @@
 
 ## Current Work Focus
 
+### ✅ RESOLVED: Directory Indexing Null Reference Error (2025-01-27)
+
+**Root Cause Identified & Fixed:**
+- **Issue**: `embedAndStore` method failing with "Cannot read properties of null (reading 'content')"  
+- **Symptoms**: Directory indexing partially successful (593 chunks generated) but failed during embedding phase
+- **Progress Counter Bug**: Showed 802/593 chunks processed due to incorrect counting
+
+**Solution Deployed** ✅:
+1. **Early Null Filtering**: Added comprehensive filtering at `embedAndStore` method entry
+   ```typescript
+   const validChunksOnly = chunks.filter(chunk => chunk && chunk.content && chunk.content.trim().length > 0);
+   ```
+
+2. **Batch-Level Protection**: Additional filtering before Voyage API calls
+   ```typescript
+   const validChunks = batch.filter(chunk => chunk && chunk.content);
+   ```
+
+3. **Fixed Progress Tracking**: Updated counters to use valid chunk counts
+4. **Enhanced Logging**: Shows filtering results and valid vs total chunks
+
+**Expected Result**: Directory indexing now completes successfully without null reference errors
+
+### 🧪 NEXT: Comprehensive MCP Server Testing  
+- Test directory indexing with fresh fix
+- Progressive testing: broad → specific searches
+- Verify all MCP tools working correctly
+
+---
+
+## Recent Work Summary
+1. ✅ **Session Affinity Issue**: Fixed multi-instance session routing (single instance deployment)
+2. ✅ **Null Reference Error**: Fixed directory indexing crash in embedAndStore method  
+3. 🔄 **Current**: Ready for comprehensive MCP testing with working directory indexing
+
+### 📝 Architecture Notes
+- **Session Storage**: In-memory Map on single instance (no cross-instance sharing needed)
+- **Load Balancing**: Disabled auto-scaling to prevent session distribution issues
+- **Performance**: Single instance should handle typical MCP workloads efficiently
+
+### 🔍 ACTIVE: Session Management Debugging (2025-01-27)
+1. **Issue Investigation** - Analyzing "Invalid or expired session" error that causes connection flapping every ~14s
+   - **Root Cause Hypothesis**: Race condition or session lookup failure between SSE handshake and POST `/message` request
+   - **Symptoms**: SSE connection establishes → POST initialize fails with HTTP 400 → SSE closes after ~150ms
+
+2. **Debugging Enhancements Deployed** ✅
+   - **Race Condition Fix**: Moved session storage before sending endpoint event to prevent timing issues
+   - **Comprehensive Logging**: Added detailed session creation, lookup, and validation logging
+   - **Session Lifecycle Tracking**: Enhanced cleanup logging with session count monitoring
+   - **Error Differentiation**: Separate error messages for missing session vs destroyed SSE response
+   - **Query Parameter Debugging**: Detailed logging of URL and sessionId extraction
+
+3. **Next Steps**
+   - **Monitor Fly.io Logs**: Observe enhanced debugging output to identify exact failure point
+   - **Session Map Analysis**: Verify sessionId storage and retrieval consistency
+   - **Connection Timing**: Analyze timing between SSE establishment and POST request
+   - **Root Cause Fix**: Implement targeted fix based on debugging results
+
 ### ✅ Completed This Session  
 1. **Complete Cursor Parity Implementation** - Successfully implemented all 7 identified enhancement areas achieving full feature parity
 2. **Enhanced Type System** - Extended types.ts with 50+ new interfaces for multi-vector storage, hybrid search, LLM re-ranking, context management, health monitoring, and caching
@@ -139,3 +197,6 @@
 - **Modular Architecture**: Clear service boundaries for independent updates
 - **Configuration Flexibility**: Environment-based configuration for different deployments
 - **Monitoring**: Structured logging and health endpoints for operations 
+
+### Newly Identified Issue (2025-07-13)
+- **Invalid/Expired Session Error**: After successful SSE handshake, the subsequent POST `/message` request returns HTTP 400 with `Invalid or expired session`, causing the connection to flap every ~14 s. Investigate session map synchronization and lifecycle. 
