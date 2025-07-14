@@ -140,25 +140,28 @@ app.get('/mcp', async (_req: Request, res: Response) => {
       sseResponse: res
     };
     
-    // Set SSE headers
+    // Set SSE headers with session affinity
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
+      'Access-Control-Allow-Headers': 'Cache-Control',
+      'X-Session-ID': sessionId,  // Help clients identify the session for debugging
+      'X-Instance-ID': process.env.FLY_ALLOC_ID || 'local'  // Help identify which instance served this
     });
     
     // Store session BEFORE sending endpoint event to prevent race condition
     activeSessions.set(sessionId, session);
-    console.log(`SSE connection established with session: ${sessionId}`);
+    const instanceId = process.env.FLY_ALLOC_ID || 'local';
+    console.log(`🔗 SSE connection established with session: ${sessionId} on instance: ${instanceId}`);
     console.log(`Total active sessions: ${activeSessions.size}`);
     console.log(`Session stored with keys:`, Array.from(activeSessions.keys()));
     
     // Send the endpoint event with the message endpoint URL and session ID
     res.write(`event: endpoint\n`);
     res.write(`data: /message?sessionId=${sessionId}\n\n`);
-    console.log(`Sent endpoint event with URL: /message?sessionId=${sessionId}`);
+    console.log(`📡 Sent endpoint event with URL: /message?sessionId=${sessionId}`);
     
     // Keep connection alive with periodic comments (standard SSE keepalive)
     const keepAliveInterval = setInterval(() => {
