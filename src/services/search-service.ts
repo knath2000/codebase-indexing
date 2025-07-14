@@ -172,6 +172,14 @@ export class SearchService {
       const denseResults = await this.qdrantClient.searchSimilar(query, queryVector);
       console.timeEnd('[SearchService] Dense search');
       console.log(`🔍 [SearchService] Found ${denseResults.length} dense results`);
+      
+      // Log top dense results with scores
+      if (denseResults.length > 0) {
+        console.log(`📊 [SearchService] Top dense results:`);
+        denseResults.slice(0, 3).forEach((result, i) => {
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+        });
+      }
 
       // Perform sparse keyword search (simple BM25-style)
       console.time('[SearchService] Keyword search');
@@ -181,6 +189,14 @@ export class SearchService {
       });
       console.timeEnd('[SearchService] Keyword search');
       console.log(`🔍 [SearchService] Found ${sparseResults.length} sparse results`);
+      
+      // Log top sparse results with scores
+      if (sparseResults.length > 0) {
+        console.log(`📊 [SearchService] Top sparse results:`);
+        sparseResults.slice(0, 3).forEach((result, i) => {
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+        });
+      }
 
       // Perform hybrid search if enabled
       let finalResults: SearchResult[];
@@ -193,16 +209,39 @@ export class SearchService {
         finalResults = hybridResult.combinedResults;
         console.timeEnd('[SearchService] Hybrid combine');
         console.log(`🔀 [SearchService] Hybrid search completed with ${finalResults.length} results`);
+        
+        // Log top hybrid results with detailed scores
+        if (finalResults.length > 0) {
+          console.log(`📊 [SearchService] Top hybrid results (α=${hybridResult.alpha}):`);
+          finalResults.slice(0, 3).forEach((result, i) => {
+            const hybridScore = result.hybridScore;
+            const scoreDetail = hybridScore ? 
+              `Dense: ${hybridScore.dense.toFixed(3)}, Sparse: ${hybridScore.sparse?.toFixed(3) || 'N/A'}, Combined: ${hybridScore.combined.toFixed(3)}` :
+              `Score: ${result.score.toFixed(3)}`;
+            console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - ${scoreDetail}`);
+          });
+        }
       } else {
         // If hybrid disabled, fall back to dense, then sparse as secondary
         finalResults = denseResults.length > 0 ? denseResults : sparseResults;
+        console.log(`📊 [SearchService] Using ${denseResults.length > 0 ? 'dense' : 'sparse'} results (hybrid disabled)`);
       }
 
       // Apply implementation boosting if enabled (default true)
       if (query.preferImplementation !== false) {
         console.time('[SearchService] Implementation boosting');
+        console.log(`📊 [SearchService] Before implementation boosting - Top 3:`);
+        finalResults.slice(0, 3).forEach((result, i) => {
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+        });
+        
         finalResults = this.boostImplementationResults(finalResults);
         console.timeEnd('[SearchService] Implementation boosting');
+        
+        console.log(`📊 [SearchService] After implementation boosting - Top 3:`);
+        finalResults.slice(0, 3).forEach((result, i) => {
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+        });
       }
 
       // Apply metadata boosting
@@ -228,6 +267,11 @@ export class SearchService {
       if (enableReranking && this.llmReranker.isEnabled() && finalResults.length > 1 && currentElapsedTime < overallTimeout) {
         this.searchStats.rerankedQueries++;
         
+        console.log(`📊 [SearchService] Before LLM reranking - Top 3:`);
+        finalResults.slice(0, 3).forEach((result, i) => {
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+        });
+        
         console.time('[SearchService] LLM re-ranking');
         const rerankerRequest: LLMRerankerRequest = {
           query: query.query,
@@ -240,6 +284,12 @@ export class SearchService {
         
         console.timeEnd('[SearchService] LLM re-ranking');
         console.log(`🧠 [SearchService] LLM re-ranking completed with ${finalResults.length} results`);
+        
+        console.log(`📊 [SearchService] After LLM reranking - Top 3:`);
+        finalResults.slice(0, 3).forEach((result, i) => {
+          const rerankedScore = result.rerankedScore ? ` (Reranked: ${result.rerankedScore.toFixed(3)})` : '';
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}${rerankedScore}`);
+        });
       } else if (enableReranking && currentElapsedTime >= overallTimeout) {
         console.warn(`[SearchService] Skipping LLM re-ranking due to overall timeout. Elapsed: ${currentElapsedTime}ms / Timeout: ${overallTimeout}ms`);
       }
@@ -255,6 +305,16 @@ export class SearchService {
       }
       
       console.log(`✅ [SearchService] Returning ${processedResults.length} enhanced results (total time: ${Date.now() - requestStartTime}ms)`);
+      
+      // Log final score pipeline summary
+      console.log(`📊 [SearchService] FINAL RANKING - Query: "${query.query}"`);
+      processedResults.slice(0, 5).forEach((result, i) => {
+        const fileKind = result.chunk.filePath.includes('.md') || 
+                        result.chunk.filePath.includes('README') || 
+                        result.chunk.filePath.includes('docs/') ? '📝' : '🔥';
+        console.log(`   ${i + 1}. ${fileKind} ${result.chunk.filePath} (${result.chunk.chunkType}) - Final: ${result.score.toFixed(3)}`);
+      });
+      
       return processedResults;
 
     } catch (error) {

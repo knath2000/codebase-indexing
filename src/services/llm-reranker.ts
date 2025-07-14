@@ -142,9 +142,18 @@ export class LLMRerankerService {
     const candidates = request.candidates.map((result, index) => {
       const metadata = result.chunk.metadata;
       const snippet = result.snippet.length > 120 ? result.snippet.slice(0, 120) + '…' : result.snippet;
+      
+      // Extract fileKind from payload if available
+      const fileKind = (result.chunk as any).fileKind || 
+                      ((result.chunk.filePath.includes('.md') || 
+                        result.chunk.filePath.includes('README') || 
+                        result.chunk.filePath.includes('docs/') ||
+                        result.chunk.filePath.includes('memory-bank/')) ? 'docs' : 'code');
+      
       return `
 CANDIDATE ${index + 1}:
 File: ${result.chunk.filePath}
+File Kind: ${fileKind} ${fileKind === 'code' ? '🔥 IMPLEMENTATION' : '📝 DOCUMENTATION'}
 Type: ${result.chunk.chunkType}
 Language: ${result.chunk.language}
 Function: ${result.chunk.functionName || 'N/A'}
@@ -159,29 +168,33 @@ ${snippet}
 `;
     }).join('\n');
 
-    return `You are a code search expert. Your task is to re-rank code search results based on their relevance to the user's query.
+    return `You are a code search expert specializing in finding IMPLEMENTATION CODE. Your task is to re-rank code search results based on their relevance to the user's query, with an EXTREME PREFERENCE for implementation code over documentation.
 
 USER QUERY: "${request.query}"
 
 SEARCH CANDIDATES:
 ${candidates}
 
-INSTRUCTIONS:
-1. Analyze each candidate's relevance to the query
-2. Consider code context, function/class names, and actual implementation
-3. **STRONGLY PREFER implementation code (functions, classes, methods) over documentation**
-4. Prioritize TypeScript/JavaScript files over markdown documentation files
-5. Boost candidates with chunkType 'function', 'class', or 'method'
-6. Prioritize exact matches over partial matches
-7. Consider code quality and completeness
-8. Return a JSON array with candidate indices in order of relevance (most relevant first)
-9. Include only the top ${request.maxResults} most relevant candidates
-10. Provide a brief explanation for your ranking
+CRITICAL RANKING RULES (in order of importance):
+1. **🔥 IMPLEMENTATION FIRST**: Candidates marked "🔥 IMPLEMENTATION" (File Kind: code) should ALWAYS rank higher than "📝 DOCUMENTATION" candidates, even if documentation has higher similarity scores
+2. **CODE ENTITY PRIORITY**: Candidates with chunkType 'function', 'class', 'method', 'interface' are premium - rank these at the top
+3. **ACTUAL CODE RELEVANCE**: Analyze the code snippet for direct relevance to the query - look for matching function names, variable names, logic patterns
+4. **IMPLEMENTATION OVER EXPLANATION**: A function that implements the behavior beats documentation that explains the behavior
+5. **EXACT MATCHES WIN**: Exact function/class name matches should rank highest
+6. **WORKING CODE**: Complete, compilable code snippets rank higher than partial or example code
+7. **RECENT/ACTIVE FILES**: Non-test files (.ts, .js, .py) over test files when both are relevant
+
+SCORING GUIDELINES:
+- Start with "🔥 IMPLEMENTATION" candidates - these should dominate your ranking
+- Only consider "📝 DOCUMENTATION" if no relevant implementation code exists
+- A mediocre implementation function is better than perfect documentation
+- Boost based on chunkType: function > class > method > interface > generic
+- Penalize documentation files (.md, README, docs/) unless explicitly asking for docs
 
 Expected JSON format:
 {
   "rankedIndices": [2, 0, 4, 1],
-  "explanation": "Ranked based on direct relevance to query..."
+  "explanation": "Ranked implementation code first: function X directly implements the query, class Y provides relevant structure..."
 }
 
 JSON Response:`;
