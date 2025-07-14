@@ -663,8 +663,8 @@ export class SearchService {
    * Boost implementation code results over documentation
    */
   private boostImplementationResults(results: SearchResult[]): SearchResult[] {
-    const IMPLEMENTATION_BOOST = 1.15; // 15% boost for implementation code
-    const DOCS_PENALTY = 0.95; // 5% penalty for documentation
+    const IMPLEMENTATION_BOOST = 1.30; // 30% boost for implementation code
+    const DOCS_PENALTY = 0.85; // 15% penalty for documentation
     
     const boostedResults = results.map(result => {
       const chunkType = result.chunk.chunkType;
@@ -690,7 +690,7 @@ export class SearchService {
       
       // Secondary boost: prefer function and class chunks
       if (chunkType === ChunkType.FUNCTION || chunkType === ChunkType.CLASS || chunkType === ChunkType.METHOD) {
-        boostFactor *= 1.1; // Additional 10% boost for code entities
+        boostFactor *= 1.15; // Additional 15% boost for code entities
       }
       
       // Apply the boost

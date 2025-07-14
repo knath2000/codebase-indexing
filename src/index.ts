@@ -1051,7 +1051,7 @@ class CodebaseIndexingServer {
   }
 
   private async handleCodebaseSearch(args: any) {
-    const { query, language, chunk_type, file_path, limit, max_tokens, enable_hybrid, enable_reranking } = args;
+    const { query, language, chunk_type, file_path, limit, max_tokens, enable_hybrid, enable_reranking, prefer_implementation } = args;
     
     const searchQuery = this.searchService.buildSearchQuery({
       query: query as string,
@@ -1061,6 +1061,7 @@ class CodebaseIndexingServer {
       ...(limit !== undefined ? { limit: limit as number } : {}),
       ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
       ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
+      ...(prefer_implementation !== undefined ? { preferImplementation: prefer_implementation as boolean } : { preferImplementation: true }), // Default to true
     });
     
     const { references, truncated, summary, metadata } = await this.searchService.searchForCodeReferences(searchQuery, max_tokens as number | undefined);

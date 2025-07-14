@@ -305,6 +305,12 @@ export class QdrantVectorClient {
         console.log(`🔍 [Qdrant] Adding chunk type filter: ${query.chunkType}`);
       }
 
+      // Add fileKind filter when preferImplementation is true
+      if (query.preferImplementation === true) {
+        filterConditions.push({ key: 'fileKind', match: { value: 'code' } });
+        console.log(`🔍 [Qdrant] Adding fileKind filter: code (prefer implementation)`);
+      }
+
       if (filterConditions.length > 0) {
         searchParams.filter = { must: filterConditions };
         console.log(`🔍 [Qdrant] Applied ${filterConditions.length} filter(s)`);
@@ -406,7 +412,32 @@ export class QdrantVectorClient {
           score: this.calculateKeywordScore(searchText, point.payload.content)
         };
       })
-      .filter(result => result.score > (query.threshold ?? 0.25))
+      .filter(result => {
+        // Apply score threshold
+        if (result.score <= (query.threshold ?? 0.25)) {
+          return false;
+        }
+        
+        // Apply preferImplementation filter
+        if (query.preferImplementation === true && result.point.payload.fileKind !== 'code') {
+          return false;
+        }
+        
+        // Apply other query filters
+        if (query.language && result.point.payload.language !== query.language) {
+          return false;
+        }
+        
+        if (query.chunkType && result.point.payload.chunkType !== query.chunkType) {
+          return false;
+        }
+        
+        if (query.filePath && result.point.payload.filePath !== query.filePath) {
+          return false;
+        }
+        
+        return true;
+      })
       .sort((a, b) => b.score - a.score)
       .slice(0, query.limit || 50); // Use consistent limit
 
