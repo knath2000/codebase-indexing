@@ -8,6 +8,7 @@ import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
+import { WorkspaceManager } from './services/workspace-manager.js';
 import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
 
 const app = express();
@@ -41,6 +42,7 @@ let mcpClient: Client | null = null;
 let indexingService: IndexingService | null = null;
 let searchService: SearchService | null = null;
 let workspaceWatcher: WorkspaceWatcher | null = null;
+let workspaceManager: WorkspaceManager | null = null;
 let servicesInitialized = false;
 
 // Store active sessions with SSE response objects
@@ -58,9 +60,12 @@ async function initializeMcpServer() {
   const config = loadConfig();
   validateConfig(config);
 
-  // Create services but don't initialize them yet
-  indexingService = new IndexingService(config);
-  searchService = new SearchService(config);
+  // Create shared workspace manager
+  workspaceManager = new WorkspaceManager();
+
+  // Create services but don't initialize them yet (with shared workspace manager)
+  indexingService = new IndexingService(config, workspaceManager);
+  searchService = new SearchService(config, workspaceManager);
 
   // Create MCP server
   mcpServer = new Server(

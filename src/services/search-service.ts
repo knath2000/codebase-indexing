@@ -4,6 +4,7 @@ import { LLMRerankerService } from './llm-reranker.js';
 import { HybridSearchService } from './hybrid-search.js';
 import { ContextManagerService } from './context-manager.js';
 import { SearchCacheService } from './search-cache.js';
+import { WorkspaceManager, WorkspaceInfo } from './workspace-manager.js';
 import {
   Config,
   SearchQuery,
@@ -25,6 +26,8 @@ export class SearchService {
   private hybridSearch: HybridSearchService;
   private contextManager: ContextManagerService;
   private searchCache: SearchCacheService;
+  private workspaceManager: WorkspaceManager;
+  private currentWorkspace: WorkspaceInfo | null = null;
   private searchStats: {
     totalQueries: number;
     cacheHits: number;
@@ -33,13 +36,17 @@ export class SearchService {
     lastQuery: Date | null;
   };
 
-  constructor(config: Config) {
+  constructor(config: Config, workspaceManager?: WorkspaceManager) {
     this.config = config;
+    this.workspaceManager = workspaceManager || new WorkspaceManager();
     this.voyageClient = new VoyageClient(config.voyageApiKey);
+    
+    // Create a temporary Qdrant client with default collection
+    // This will be updated during initialize() with workspace-specific collection
     this.qdrantClient = new QdrantVectorClient(
       config.qdrantUrl,
       config.qdrantApiKey,
-      config.collectionName,
+      config.collectionName, // Temporary, will be replaced
       this.voyageClient.getEmbeddingDimension(config.embeddingModel)
     );
     
@@ -99,10 +106,18 @@ export class SearchService {
   }
 
   /**
-   * Initialize the search service
+   * Initialize the search service with workspace detection
    */
   async initialize(): Promise<void> {
     try {
+      // Detect current workspace or use existing one
+      if (!this.currentWorkspace) {
+        this.currentWorkspace = await this.workspaceManager.detectCurrentWorkspace();
+      }
+      
+      // Update Qdrant client to use workspace-specific collection
+      this.updateQdrantClientForWorkspace(this.currentWorkspace);
+      
       // Test connections
       const voyageTest = await this.voyageClient.testConnection();
       if (!voyageTest) {
@@ -114,10 +129,25 @@ export class SearchService {
         throw new Error('Failed to connect to Qdrant');
       }
 
-      console.log('Search service initialized successfully');
+      console.log(`🔍 SearchService initialized for workspace: ${this.currentWorkspace.name}`);
+      console.log(`📊 Using collection: ${this.currentWorkspace.collectionName}`);
     } catch (error) {
       throw new Error(`Failed to initialize search service: ${error}`);
     }
+  }
+
+  /**
+   * Update Qdrant client for workspace-specific collection
+   */
+  private updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
+    this.qdrantClient = new QdrantVectorClient(
+      this.config.qdrantUrl,
+      this.config.qdrantApiKey,
+      workspace.collectionName, // Use workspace-specific collection name
+      this.voyageClient.getEmbeddingDimension(this.config.embeddingModel)
+    );
+    
+    console.log(`🔄 Updated SearchService Qdrant client for workspace collection: ${workspace.collectionName}`);
   }
 
   /**

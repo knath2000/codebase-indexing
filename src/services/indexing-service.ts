@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import { VoyageClient } from '../clients/voyage-client.js';
 import { QdrantVectorClient } from '../clients/qdrant-client.js';
 import { CodeParser } from '../parsers/code-parser.js';
+import { WorkspaceManager, WorkspaceInfo } from './workspace-manager.js';
 import {
   Config,
   CodeChunk,
@@ -23,15 +24,21 @@ export class IndexingService extends EventEmitter {
   private config: Config;
   private progress: IndexingProgress;
   private stats: IndexStats;
+  private workspaceManager: WorkspaceManager;
+  private currentWorkspace: WorkspaceInfo | null = null;
 
-  constructor(config: Config) {
+  constructor(config: Config, workspaceManager?: WorkspaceManager) {
     super();
     this.config = config;
+    this.workspaceManager = workspaceManager || new WorkspaceManager();
     this.voyageClient = new VoyageClient(config.voyageApiKey);
+    
+    // Create a temporary Qdrant client with default collection
+    // This will be updated during initialize() with workspace-specific collection
     this.qdrantClient = new QdrantVectorClient(
       config.qdrantUrl,
       config.qdrantApiKey,
-      config.collectionName,
+      config.collectionName, // Temporary, will be replaced
       this.voyageClient.getEmbeddingDimension(config.embeddingModel)
     );
     this.codeParser = new CodeParser();
@@ -73,10 +80,16 @@ export class IndexingService extends EventEmitter {
   }
 
   /**
-   * Initialize the indexing service
+   * Initialize the indexing service with enhanced workspace detection
    */
   async initialize(): Promise<void> {
     try {
+      // Detect current workspace first
+      this.currentWorkspace = await this.workspaceManager.detectCurrentWorkspace();
+      
+      // Update Qdrant client to use workspace-specific collection
+      this.updateQdrantClientForWorkspace(this.currentWorkspace);
+      
       // Test connections
       const voyageTest = await this.voyageClient.testConnection();
       if (!voyageTest) {
@@ -88,13 +101,30 @@ export class IndexingService extends EventEmitter {
         throw new Error('Failed to connect to Qdrant');
       }
 
-      // Initialize Qdrant collection
+      // Initialize workspace-specific Qdrant collection
       await this.qdrantClient.initializeCollection();
 
-      console.log('Indexing service initialized successfully');
+      console.log(`🔧 IndexingService initialized for workspace: ${this.currentWorkspace.name}`);
+      console.log(`📊 Using collection: ${this.currentWorkspace.collectionName}`);
+      console.log(`📁 Workspace type: ${this.currentWorkspace.type}`);
+      console.log(`🎯 Folders: ${this.currentWorkspace.folders.length} folder(s)`);
     } catch (error) {
       throw new Error(`Failed to initialize indexing service: ${error}`);
     }
+  }
+
+  /**
+   * Update Qdrant client for workspace-specific collection
+   */
+  private updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
+    this.qdrantClient = new QdrantVectorClient(
+      this.config.qdrantUrl,
+      this.config.qdrantApiKey,
+      workspace.collectionName, // Use workspace-specific collection name
+      this.voyageClient.getEmbeddingDimension(this.config.embeddingModel)
+    );
+    
+    console.log(`🔄 Updated Qdrant client for workspace collection: ${workspace.collectionName}`);
   }
 
   /**

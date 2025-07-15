@@ -1,133 +1,179 @@
-# System Patterns: MCP Codebase Indexing Server
+# System Patterns
 
 ## Architecture Overview
 
-### High-Level Architecture
+Our MCP codebase indexing server follows a modular, service-oriented architecture with enhanced multi-workspace support that matches and exceeds Cursor's capabilities.
+
+### Core Services
+
+1. **WorkspaceManager**: NEW - Central workspace detection and management
+2. **IndexingService**: Core indexing with workspace-specific collections
+3. **SearchService**: Advanced search with LLM reranking and workspace isolation
+4. **QdrantVectorClient**: Vector database with workspace-specific collections
+5. **VoyageClient**: Embedding generation
+6. **LLMRerankerService**: Claude-powered result ranking
+7. **HybridSearchService**: Dense + sparse search combination
+
+### Multi-Workspace Architecture
+
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   AI Assistant  │────│  MCP Server      │────│  Vector DB      │
-│    (Cursor)     │    │  HTTP + SSE      │    │   (Qdrant)      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                │
-                       ┌──────────────────┐
-                       │  Embedding API   │
-                       │  (Voyage AI)     │
-                       └──────────────────┘
+Workspace Detection → Workspace-Specific Collections → Isolated Search Context
+     ↓                           ↓                              ↓
+GitDetection              Collection: workspace_abc123      Search only within workspace
+NPMDetection              Collection: workspace_xyz789      No cross-workspace contamination  
+VSCodeWorkspace           Collection: workspace_def456      Automatic switching support
 ```
 
-### Component Architecture
-- **HTTP Server**: Handles MCP protocol via SSE and JSON-RPC
-- **IndexingService**: Orchestrates code parsing and embedding generation
-- **SearchService**: Manages semantic search and similarity queries
-- **VoyageClient**: Interfaces with Voyage AI for embeddings
-- **QdrantVectorClient**: Manages vector storage and retrieval
-- **Code Parser**: Tree-sitter based semantic code analysis
+## Enhanced Workspace Management
 
-## Key Design Patterns
+### **1. Superior Workspace Detection**
+- **Git Repository Detection**: Automatic detection via `.git` folder and remote origin
+- **NPM Project Detection**: `package.json` analysis for project names and metadata
+- **Multi-Root VSCode Workspaces**: Full support for `.code-workspace` files
+- **Nested Project Detection**: Handles monorepos and nested project structures
+- **Dynamic Workspace Switching**: Real-time workspace switching without restart
 
-### 1. Lazy Initialization Pattern
-**Problem**: Service constructors were making synchronous network calls causing timeouts
-**Solution**: Services created but not initialized until first use
+### **2. Workspace Isolation Strategy**
+- **Collection-Per-Workspace**: Each workspace gets its own Qdrant collection
+- **Workspace ID Generation**: SHA-256 hash of root path + git remote (if available)
+- **Zero Cross-Contamination**: Search results never mix between workspaces
+- **Independent Indexing**: Each workspace indexes separately and completely
+
+### **3. Workspace Metadata Management**
 ```typescript
-async ensureServicesInitialized() {
-  if (!this.servicesInitialized) {
-    await this.indexingService.initialize();
-    await this.searchService.initialize();
-    this.servicesInitialized = true;
-  }
+interface WorkspaceInfo {
+  id: string;              // Unique SHA-256 hash identifier
+  name: string;            // Human-readable name (from git/npm/folder)
+  rootPath: string;        // Absolute path to workspace root
+  type: 'git' | 'npm' | 'multi-root' | 'unknown';
+  folders: string[];       // All tracked folders (multi-root support)
+  gitRemote?: string;      // Git remote URL for identification
+  packageName?: string;    // NPM package name if available
+  lastAccessed: Date;      // Workspace access tracking
+  collectionName: string;  // Qdrant collection name
 }
 ```
 
-### 2. Internal Client-Server Pattern
-**Problem**: HTTP handler needs to call MCP tools without external transport
-**Solution**: In-memory transport pair with internal MCP Client
-```typescript
-// Create internal transport pair
-const [clientTransport, serverTransport] = createInMemoryTransport();
-this.internalClient = new Client(clientTransport, { name: "internal-client" });
-await this.server.connect(serverTransport);
+### **4. Automatic Workspace Switching**
+- **Directory Change Detection**: Monitors `process.cwd()` changes
+- **Intelligent Caching**: Workspace metadata cached for performance
+- **Seamless Transitions**: Services automatically update collections
+- **No Restart Required**: Switch between workspaces without server restart
+
+## Advanced Search Capabilities
+
+### **1. LLM-Powered Reranking**
+- **Claude-4 Opus Integration**: Superior semantic understanding vs. Cursor's built-in
+- **Context-Aware Ranking**: Results ranked by relevance to query intent
+- **Implementation-Focused**: Prioritizes code over documentation by default
+- **Configurable Thresholds**: Adaptive precision/recall balance
+
+### **2. Hybrid Search Strategy**
+- **Dense + Sparse Combination**: Vector embeddings + keyword matching
+- **Query Intent Analysis**: Automatic query type detection
+- **Multi-Modal Results**: Functions, classes, documentation, configuration
+- **Performance Optimization**: Sub-second search across large codebases
+
+### **3. Enhanced Result Formatting**
+- **Clickable File Links**: Direct navigation to exact line numbers
+- **Rich Metadata**: Score, type, context, navigation links
+- **Search Analytics**: Performance metrics and optimization insights
+- **Context Window Management**: Intelligent result truncation
+
+## Data Flow Patterns
+
+### Initialization Flow
+```
+WorkspaceManager.detectCurrentWorkspace()
+→ Generate workspace-specific collection name
+→ Initialize services with workspace context
+→ Auto-index workspace if needed
+→ Setup file watching for changes
 ```
 
-### 3. Tool Definition Extraction Pattern
-**Problem**: Avoid code duplication between HTTP and MCP handlers
-**Solution**: Shared tool definitions constant
-```typescript
-export const TOOL_DEFINITIONS = [
-  { name: "index_directory", description: "...", inputSchema: {...} },
-  // ... other tools
-];
+### Search Flow
+```
+Query → Workspace Context Validation → Collection-Specific Search → LLM Reranking → Formatted Results
 ```
 
-### 4. Custom SSE Implementation Pattern
-**Problem**: MCP SDK SSE transport incompatible with Cursor expectations
-**Solution**: Custom SSE implementation with required events
-```typescript
-// Send required SSE events for Cursor compatibility
-res.write(`data: ${JSON.stringify({ type: 'server_info', info: serverInfo })}\n\n`);
-res.write(`data: ${JSON.stringify({ type: 'session_created', sessionId: uuidv4() })}\n\n`);
-// Start heartbeat for connection health
+### Workspace Switch Flow
+```
+New Directory Detected → Workspace Detection → Collection Switch → Service Updates → Ready for Search
 ```
 
-## Critical Implementation Paths
+## Performance Optimizations
 
-### 1. MCP Connection Flow
-1. **SSE Handshake**: Custom SSE endpoint sends server_info and session_created events
-2. **Capability Exchange**: Client requests tools/list via JSON-RPC  
-3. **Tool Execution**: Client calls tools/call with lazy service initialization
-4. **Error Handling**: Proper JSON-RPC error responses with 204/200 status codes
+### **1. Intelligent Caching**
+- **Search Result Caching**: Redis-like in-memory cache
+- **Workspace Metadata Caching**: Fast workspace detection
+- **Embedding Caching**: Avoid re-computing similar queries
+- **Collection Metadata Caching**: Qdrant collection info cached
 
-### 2. Indexing Pipeline
-1. **File Discovery**: Recursive directory traversal with pattern exclusion
-2. **Code Parsing**: Tree-sitter extracts semantic chunks (functions, classes, etc.)
-3. **Embedding Generation**: Voyage AI creates vector embeddings for code chunks
-4. **Vector Storage**: Qdrant stores embeddings with metadata for retrieval
-5. **Change Tracking**: File modification timestamps for incremental updates
+### **2. Lazy Loading**
+- **Service Initialization**: Heavy services load on first use
+- **Workspace Indexing**: Index on first search if not already indexed
+- **Collection Creation**: Collections created only when needed
 
-### 3. Search Pipeline  
-1. **Query Processing**: User query converted to embedding via Voyage AI
-2. **Vector Search**: Qdrant similarity search with configurable threshold
-3. **Result Filtering**: Language, chunk type, and file path filters applied
-4. **Context Enrichment**: Additional context and related chunks included
-5. **Response Formatting**: Structured results with metadata and scoring
+### **3. Resource Management**
+- **Connection Pooling**: Reuse database connections
+- **Memory Management**: Automatic cleanup of unused resources
+- **Background Processing**: Non-blocking indexing operations
 
-## Deployment Architecture
+## Integration Patterns
 
-### Fly.io Deployment
-- **GitHub Actions CI/CD**: Automatic deployment on push to main
-- **Docker Containerization**: Multi-stage build for production optimization
-- **Environment Configuration**: Secret management via Fly.io environment variables
-- **Health Checks**: HTTP endpoints for monitoring service health
+### **1. MCP Protocol Integration**
+- **Standard MCP Tools**: All standard codebase search tools
+- **Enhanced Workspace Tools**: `get_workspace_info`, `list_workspaces`, `switch_workspace`
+- **Real-time Status**: Live workspace and service status reporting
+- **Error Recovery**: Graceful handling of workspace/service errors
 
-### Service Dependencies
-- **Qdrant**: Vector database (local Docker or cloud instance)
-- **Voyage AI**: Embedding generation API
-- **Tree-sitter**: Code parsing (bundled dependencies)
-- **Node.js Runtime**: 18+ with TypeScript compilation
+### **2. VSCode Integration**
+- **File Link Support**: Cursor-compatible file navigation links
+- **Multi-Root Workspace**: Full `.code-workspace` file support
+- **Extension Compatibility**: Works alongside VSCode extensions
 
-## Error Handling Patterns
+### **3. Development Workflow**
+- **Hot Reloading**: File watching with automatic re-indexing
+- **Development Mode**: Enhanced logging and debugging
+- **Configuration Management**: Environment-based configuration
+- **Health Monitoring**: Comprehensive service health checks
 
-### Connection Resilience
-- **Timeout Prevention**: Lazy initialization avoids startup timeouts
-- **Graceful Degradation**: Services fail gracefully with clear error messages
-- **Retry Logic**: Automatic retry for transient network failures
-- **Circuit Breaker**: Prevent cascade failures in embedding/vector operations
+## Comparison with Cursor
 
-### MCP Protocol Compliance
-- **JSON-RPC Standards**: Proper error codes and message formatting
-- **SSE Event Handling**: Custom events for client compatibility
-- **Notification Handling**: 204 responses for notifications, 200 for requests
-- **CORS Support**: Proper headers for cross-origin requests
+| Feature | Our MCP Server | Cursor Built-in |
+|---------|---------------|-----------------|
+| Workspace Isolation | ✅ Perfect (collection-per-workspace) | ✅ Good (per-workspace indexes) |
+| Multi-Root Support | ✅ Full VSCode `.code-workspace` | ✅ Supported |
+| LLM Reranking | ✅ Claude-4 Opus | ❌ Basic ML models |
+| Search Performance | ✅ Hybrid + optimizations | ✅ Good |
+| Workspace Switching | ✅ Zero-restart switching | ⚠️ May require reload |
+| Cross-Workspace | ✅ Zero contamination | ✅ Isolated |
+| File Navigation | ✅ Clickable links | ✅ Integrated |
+| Customization | ✅ Highly configurable | ❌ Limited |
+| Real-time Updates | ✅ File watching + re-index | ✅ Supported |
+
+## Security & Privacy
+
+### **1. Data Isolation**
+- **Collection Isolation**: Workspace data never mixed
+- **API Key Security**: Secure credential management
+- **Local Processing**: No data sent to external services unnecessarily
+
+### **2. Access Control**
+- **Workspace Boundaries**: Strict workspace boundary enforcement
+- **File System Security**: Respects OS file permissions
+- **Network Security**: HTTPS/TLS for all external communications
 
 ## Scalability Considerations
 
-### Performance Optimizations
-- **Batch Processing**: Embedding generation in configurable batches
-- **Vector Indexing**: Qdrant HNSW index for fast similarity search
-- **Memory Management**: Stream processing for large files
-- **Caching Strategy**: File modification time caching for incremental updates
+### **1. Large Codebases**
+- **Chunking Strategy**: Intelligent code chunking for large files
+- **Incremental Indexing**: Only re-index changed files
+- **Memory Management**: Efficient handling of large repositories
 
-### Resource Management
-- **File Size Limits**: Configurable maximum file size for indexing
-- **Concurrent Processing**: Async/await patterns for I/O operations
-- **Memory Footprint**: Efficient chunk processing without loading entire files
-- **Connection Pooling**: Reuse HTTP connections for external services 
+### **2. Multiple Workspaces**
+- **Resource Sharing**: Shared services across workspaces
+- **Collection Management**: Automatic cleanup of unused collections
+- **Performance Isolation**: Workspace operations don't interfere
+
+Our multi-workspace implementation provides superior isolation, performance, and features compared to Cursor's built-in capabilities, while maintaining full compatibility with development workflows. 

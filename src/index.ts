@@ -8,6 +8,7 @@ import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
+import { WorkspaceManager } from './services/workspace-manager.js';
 
 // Server configuration
 const SERVER_NAME = 'codebase-indexing-server';
@@ -287,6 +288,38 @@ export const TOOL_DEFINITIONS = [
     inputSchema: {
       type: 'object',
       properties: {}
+    }
+  },
+  {
+    name: 'get_workspace_info',
+    description: 'Get information about the current workspace and detected project structure',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'list_workspaces',
+    description: 'List all detected workspaces and their metadata',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'switch_workspace',
+    description: 'Switch to a different workspace by ID',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspace_id: {
+          type: 'string',
+          description: 'The ID of the workspace to switch to'
+        }
+      },
+      required: ['workspace_id']
     }
   },
   {
@@ -653,6 +686,121 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
                     ``
             }]
           };
+        case 'get_workspace_info':
+          // Access the workspace manager from the service (if available)
+          const currentWorkspace = (indexingService as any).currentWorkspace || (searchService as any).currentWorkspace;
+          if (!currentWorkspace) {
+            return {
+              content: [{
+                type: 'text',
+                text: '❌ No workspace detected. Please ensure you are running the server from a valid workspace directory.'
+              }],
+              isError: true
+            };
+          }
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `🏗️ **Current Workspace Information**\n\n` +
+                    `**Name:** ${currentWorkspace.name}\n` +
+                    `**Type:** ${currentWorkspace.type}\n` +
+                    `**Root Path:** ${currentWorkspace.rootPath}\n` +
+                    `**Collection:** ${currentWorkspace.collectionName}\n` +
+                    `**Folders:** ${currentWorkspace.folders.length}\n` +
+                    currentWorkspace.folders.map((folder: string, i: number) => `  ${i + 1}. ${folder}`).join('\n') + '\n\n' +
+                    (currentWorkspace.gitRemote ? `**Git Remote:** ${currentWorkspace.gitRemote}\n` : '') +
+                    (currentWorkspace.packageName ? `**Package Name:** ${currentWorkspace.packageName}\n` : '') +
+                    `**Last Accessed:** ${currentWorkspace.lastAccessed.toISOString()}\n` +
+                    `**Workspace ID:** ${currentWorkspace.id}`
+            }]
+          };
+        
+        case 'list_workspaces':
+          // Get workspace manager from services
+          const workspaceManager = (indexingService as any).workspaceManager || (searchService as any).workspaceManager;
+          if (!workspaceManager) {
+            return {
+              content: [{
+                type: 'text',
+                text: '❌ Workspace manager not available.'
+              }],
+              isError: true
+            };
+          }
+          
+          const allWorkspaces = workspaceManager.getAllWorkspaces();
+          const currentWorkspaceId = workspaceManager.getCurrentWorkspace()?.id;
+          
+          if (allWorkspaces.length === 0) {
+            return {
+              content: [{
+                type: 'text',
+                text: '📂 No workspaces have been detected yet.'
+              }]
+            };
+          }
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `📂 **Detected Workspaces**\n\n` +
+                    allWorkspaces.map((workspace: any, index: number) => {
+                      const current = workspace.id === currentWorkspaceId ? ' ← **Current**' : '';
+                      const lastAccessed = workspace.lastAccessed.toLocaleDateString();
+                      return `${index + 1}. **${workspace.name}** (${workspace.type})${current}\n` +
+                             `   - Path: ${workspace.rootPath}\n` +
+                             `   - Collection: ${workspace.collectionName}\n` +
+                             `   - Last Accessed: ${lastAccessed}\n` +
+                             `   - ID: ${workspace.id.substring(0, 12)}...`;
+                    }).join('\n\n')
+            }]
+          };
+        
+        case 'switch_workspace':
+          const targetWorkspaceId = args.workspace_id as string;
+          const wsManager = (indexingService as any).workspaceManager || (searchService as any).workspaceManager;
+          
+          if (!wsManager) {
+            return {
+              content: [{
+                type: 'text',
+                text: '❌ Workspace manager not available.'
+              }],
+              isError: true
+            };
+          }
+          
+          const switchedWorkspace = await wsManager.switchToWorkspace(targetWorkspaceId);
+          if (!switchedWorkspace) {
+            return {
+              content: [{
+                type: 'text',
+                text: `❌ Workspace not found: ${targetWorkspaceId}`
+              }],
+              isError: true
+            };
+          }
+          
+          // Update services to use the new workspace
+          if (indexingService && (indexingService as any).updateQdrantClientForWorkspace) {
+            (indexingService as any).updateQdrantClientForWorkspace(switchedWorkspace);
+          }
+          if (searchService && (searchService as any).updateQdrantClientForWorkspace) {
+            (searchService as any).updateQdrantClientForWorkspace(switchedWorkspace);
+          }
+          
+          return {
+            content: [{
+              type: 'text',
+              text: `🔄 **Successfully switched to workspace:** ${switchedWorkspace.name}\n\n` +
+                    `**Type:** ${switchedWorkspace.type}\n` +
+                    `**Collection:** ${switchedWorkspace.collectionName}\n` +
+                    `**Path:** ${switchedWorkspace.rootPath}\n\n` +
+                    `🔧 All services have been updated to use the new workspace collection.`
+            }]
+          };
+
         case 'clear_search_cache':
           searchService.clearCaches();
           return {
@@ -690,6 +838,7 @@ class CodebaseIndexingServer {
   private indexingService: IndexingService;
   private searchService: SearchService;
   private workspaceWatcher: WorkspaceWatcher;
+  private workspaceManager: WorkspaceManager;
   private workspaceDir: string;
 
   constructor(config: Config) {
@@ -702,8 +851,11 @@ class CodebaseIndexingServer {
       }
     });
 
-    this.indexingService = new IndexingService(config);
-    this.searchService = new SearchService(config);
+    // Create shared workspace manager
+    this.workspaceManager = new WorkspaceManager();
+
+    this.indexingService = new IndexingService(config, this.workspaceManager);
+    this.searchService = new SearchService(config, this.workspaceManager);
     this.workspaceDir = process.cwd();
     this.workspaceWatcher = new WorkspaceWatcher(
       this.workspaceDir,
@@ -1201,10 +1353,27 @@ class CodebaseIndexingServer {
   async run(): Promise<void> {
     console.log('🚀 Starting Codebase Indexing MCP Server...');
     
-    // Initialize services
+    // Initialize services with workspace detection
     console.log('🔧 Initializing indexing and search services...');
     await this.indexingService.initialize();
     await this.searchService.initialize();
+    
+    // Show workspace information after initialization
+    const currentWorkspace = this.workspaceManager.getCurrentWorkspace();
+    if (currentWorkspace) {
+      console.log('\n🏗️  **Enhanced Multi-Workspace Configuration Active**');
+      console.log(`📂 Workspace: ${currentWorkspace.name} (${currentWorkspace.type})`);
+      console.log(`📊 Collection: ${currentWorkspace.collectionName}`);
+      console.log(`🔧 Workspace ID: ${currentWorkspace.id.substring(0, 16)}...`);
+      console.log(`🎯 Folders: ${currentWorkspace.folders.length} folder(s)`);
+      if (currentWorkspace.gitRemote) {
+        console.log(`🔗 Git Remote: ${currentWorkspace.gitRemote}`);
+      }
+      if (currentWorkspace.packageName) {
+        console.log(`📦 Package: ${currentWorkspace.packageName}`);
+      }
+      console.log('🎉 **Multi-workspace isolation ACTIVE - Zero cross-contamination**\n');
+    }
     
     // Auto-index workspace if no index exists
     await this.ensureWorkspaceIndexed();

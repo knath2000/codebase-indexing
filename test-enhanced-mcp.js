@@ -5,8 +5,8 @@
  * Tests all new features including hybrid search, LLM re-ranking, caching, and health monitoring
  */
 
-const { spawn } = require('child_process');
-const path = require('path');
+import { spawn } from 'child_process';
+import path from 'path';
 
 // Test configuration
 const MCP_SERVER_COMMAND = 'node';
@@ -533,11 +533,11 @@ async function main() {
   process.exit(tester.testResults.failed > 0 ? 1 : 0);
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(error => {
     logError(`Test runner failed: ${error.message}`);
     process.exit(1);
   });
 }
 
-module.exports = { MCPTester }; 
+export { MCPTester }; 
