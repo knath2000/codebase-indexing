@@ -18,11 +18,16 @@ export class LLMRerankerService {
     this.enabled = config.enableLLMReranking && !!this.apiKey;
     this.timeoutMs = config.llmRerankerTimeoutMs;
     this.baseUrl = (config as any).llmRerankerBaseUrl;
-    this.projectId = (config as any).llmRerankerProjectId;
-    
-    if (config.enableLLMReranking && !this.apiKey) {
-      console.warn('LLM re-ranking is enabled but no API key provided. Re-ranking will be disabled.');
-      this.enabled = false;
+    this.projectId = (config as any).llmRerankerProjectId; // LangDB Project ID
+
+    if (this.enabled) {
+      console.log(`[LLMRerankerService] Initialized with model: ${this.model}, timeout: ${this.timeoutMs}ms`);
+      if (this.baseUrl) {
+        console.log(`[LLMRerankerService] Using custom base URL: ${this.baseUrl}`);
+        if (this.projectId) {
+          console.log(`[LLMRerankerService] LangDB project ID configured: ${this.projectId.substring(0, 8)}...`);
+        }
+      }
     }
   }
 
@@ -221,13 +226,13 @@ JSON Response:`;
    * Call OpenAI GPT API with timeout and retry logic
    */
   private async callOpenAIAPI(prompt: string, requestStartTime: number): Promise<string> {
-    const maxRetries = 3;
-    const baseDelay = 1000; // 1 second base delay
+    const maxRetries = 5; // Increased from 3 to handle LangDB infrastructure issues
+    const baseDelay = 2000; // Increased from 1000ms to 2000ms for better stability
     
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const controller = new AbortController();
       const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
-      const timeoutMs = Math.max(1000, remainingTime);
+      const timeoutMs = Math.max(2000, remainingTime); // Increased minimum timeout
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       
       try {
