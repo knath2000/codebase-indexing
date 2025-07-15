@@ -67,6 +67,19 @@
 - ✅ 10/10 queries achieve 100 % recall, Avg First Rank ≈ 1.9
 - 🚀 Average Precision@10 improved from 36.7 % → **48.3 %** (evaluation harness)
 
+## 🚧 In Progress (July 2025)
+
+### LLM Reranker Production Stabilization
+- TLS certificate and DNS issues resolved; reranker now invoked for all searches.
+- Current blocker: Sporadic `500 Internal Server Error` responses from LangDB gateway. Graceful fallback is active but precision gains are reduced.
+- Next steps: implement exponential back-off + retry, open support ticket with LangDB, and evaluate fallback to Anthropic direct endpoint.
+
+### Metrics To Watch
+- `LLM re-ranking usage` counter should increase without matching `reranker_error` increments.
+- Track proportion of queries where reranker returns non-error via enhanced stats endpoint.
+
+**Overall Completion** remains 95 % but reliability work continues.
+
 ## 🚧 In Progress (Current Session)
 
 ### ✅ COMPLETED: Markdown Support Implementation

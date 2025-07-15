@@ -1,10 +1,10 @@
 # Active Context: MCP Codebase Indexing Server
 
-## Current Status: ✅ OPERATIONAL
+## Current Status: ⚠️ PARTIALLY DEGRADED (LLM Reranker 500 errors)
 
-**Last Updated**: January 2025  
-**Phase**: Production-ready with full MCP integration  
-**Status**: All 12 tools working correctly with Cursor (green circle indicator)
+**Last Updated**: July 2025  
+**Phase**: Production with ongoing reranker stabilization  
+**Status**: All tools operational, but LangDB reranker occasionally returns 500 errors – fallback in place.
 
 ## Recent Major Achievements
 
@@ -32,6 +32,12 @@
 - **Impact**: `get_enhanced_stats` now shows `LLM re-ranking usage: 100 queries`; problematic queries rank at #1; expected P@10 ≥ 45 % after re-evaluation.
 
 ## Current Work Focus
+
+### 🛠️ LLM Reranker Production Stabilization
+- Investigate LangDB 500 Internal Server Error responses.
+- Add retry/back-off logic and timeout safeguards inside `LLMRerankerService`.
+- Coordinate with LangDB support to confirm gateway health.
+- Monitor Fly logs and enhanced stats for error rate.
 
 ### ✅ RESOLVED: Directory Indexing Null Reference Error (2025-01-27)
 

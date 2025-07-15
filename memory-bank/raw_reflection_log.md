@@ -385,3 +385,36 @@
 - Document env-var wiring pattern for future optional features.
 - Record best-practice for Fly secrets management.
 - Note observed precision gains once evaluation harness reruns. 
+
+---
+**Date:** 2025-07-14  
+**TaskRef:** "LangDB LLM Reranker Production Integration & Troubleshooting"
+
+**Learnings:**
+- Fixed TLS certificate mismatch by switching from `https://api.langdb.ai` to the region-scoped gateway under `*.langdb.ai`.
+- Resolved DNS failure by using the project-scoped endpoint `https://api.us-east-1.langdb.ai/<PROJECT_ID>/v1` supplied in LangDB docs.
+- Deployed updated `LLM_RERANKER_BASE_URL` secret via Fly CLI and triggered an immediate deploy; confirmed reranker invocation in logs.
+- Added granular debug logging in `LLMRerankerService` to print API latency and raw response snippets, plus a `totalRequests` counter.
+- Gateway now reachable but intermittently returns `500 Internal Server Error`; SearchService falls back gracefully so user queries still succeed.
+
+**Key Implementation Details:**
+- Verified secrets inside VM with `fly ssh console` to ensure env vars visible at runtime.
+- Observed `[LLMReranker] Calling OpenAI API ...` followed by either success logs or `Re-ranking failed` when 500 occurs.
+- Confirmed `Reranked: Yes` header in tool responses proving pipeline invoked even on fallback.
+- Documented region pattern (`api.<region>.langdb.ai`) and the need to include `/v1`.
+
+**Difficulties:**
+- Certificate SANs referenced `*.dev.langdb.ai`, leading to initial TLS failures.
+- Gateway documentation lacked explicit production hostnames, causing trial-and-error base-URL updates.
+- Upstream 500 errors require coordination with LangDB; implemented retry strategy planning.
+
+**Successes:**
+- End-to-end LLM reranker path operational in production.
+- TLS and DNS integration issues fully resolved.
+- Debug instrumentation provides clear visibility for further reliability work.
+
+**Improvements_Identified_For_Consolidation:**
+- Always cross-check certificate SANs when integrating new HTTPS APIs.
+- Prefer region-scoped LangDB endpoints for lower latency and valid certificates.
+- Include structured debug output (latency + response snippet) around external LLM calls.
+--- 

@@ -10,6 +10,7 @@ export class LLMRerankerService {
   private totalRequests: number = 0;
   private maxDurationsToStore: number = 100; // Store up to 100 durations
   private baseUrl?: string;
+  private projectId?: string; // LangDB Project ID
 
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
@@ -17,6 +18,7 @@ export class LLMRerankerService {
     this.enabled = config.enableLLMReranking && !!this.apiKey;
     this.timeoutMs = config.llmRerankerTimeoutMs;
     this.baseUrl = (config as any).llmRerankerBaseUrl;
+    this.projectId = (config as any).llmRerankerProjectId;
     
     if (config.enableLLMReranking && !this.apiKey) {
       console.warn('LLM re-ranking is enabled but no API key provided. Re-ranking will be disabled.');
@@ -209,115 +211,105 @@ JSON Response:`;
     if (!this.apiKey) {
       throw new Error('No API key configured for LLM re-ranking');
     }
-    // If a custom base URL is provided, treat as OpenAI-compatible gateway
-    if (this.baseUrl) {
-      return this.callOpenAIAPI(prompt, requestStartTime);
-    }
-    // Support different LLM providers based on model name when no custom base URL
-    if (this.model.includes('claude')) {
-      return this.callAnthropicAPI(prompt, requestStartTime);
-    } else if (this.model.includes('gpt')) {
-      return this.callOpenAIAPI(prompt, requestStartTime);
-    } else {
-      throw new Error(`Unsupported LLM model for re-ranking: ${this.model}`);
-    }
+    // Always use OpenAI-compatible API (supports LangDB gateway and direct OpenAI)
+    return this.callOpenAIAPI(prompt, requestStartTime);
   }
 
-  /**
-   * Call Anthropic Claude API with timeout
-   */
-  private async callAnthropicAPI(prompt: string, requestStartTime: number): Promise<string> {
-    const controller = new AbortController();
-    const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
-    const timeoutMs = Math.max(1000, remainingTime);
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      console.log(`[LLMReranker] Calling Anthropic API with timeout ${timeoutMs}ms...`);
-      const apiCallStartTime = Date.now();
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey!,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: this.model,
-          max_tokens: 400,
-        temperature: 0.1,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-        }),
-        signal: controller.signal
-    });
 
-    if (!response.ok) {
-      throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json() as any;
-      const apiCallDuration = Date.now() - apiCallStartTime;
-      console.log(`[LLMReranker] Anthropic API call completed in ${apiCallDuration}ms`);
-      // Additional debug information to verify LangDB gateway output
-      console.debug(`[LLMReranker] Anthropic raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
-      this.totalRequests++;
-    return data.content[0].text;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
 
   /**
-   * Call OpenAI GPT API with timeout
+   * Call OpenAI GPT API with timeout and retry logic
    */
   private async callOpenAIAPI(prompt: string, requestStartTime: number): Promise<string> {
-    const controller = new AbortController();
-    const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
-    const timeoutMs = Math.max(1000, remainingTime);
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
-      const apiCallStartTime = Date.now();
-    const endpoint = this.baseUrl ? `${this.baseUrl.replace(/\/?$/, '')}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey!}`,
-        'x-api-key': this.apiKey!
-      },
-      body: JSON.stringify({
-        model: this.model,
-          max_tokens: 400,
-        temperature: 0.1,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second base delay
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
+      const timeoutMs = Math.max(1000, remainingTime);
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      
+      try {
+        if (attempt > 0) {
+          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
+          console.log(`[LLMReranker] Retrying OpenAI API call (attempt ${attempt + 1}/${maxRetries + 1}) after ${delay}ms delay...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
+        }
+        
+        const apiCallStartTime = Date.now();
+        const endpoint = this.baseUrl ? `${this.baseUrl.replace(/\/?$/, '')}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey!}`,
+          'x-api-key': this.apiKey!
+        };
+        
+        // Add LangDB project ID header if available
+        if (this.projectId) {
+          headers['x-project-id'] = this.projectId;
+        }
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: this.model,
+            max_tokens: 400,
+            temperature: 0.1,
+            messages: [
+              {
+                role: 'user',
+                content: prompt
+              }
+            ]
+          }),
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          const errorMessage = `OpenAI API error: ${response.status} ${response.statusText}`;
+          
+          // Only retry on 500 errors (LangDB gateway issues)
+          if (response.status === 500 && attempt < maxRetries) {
+            console.log(`[LLMReranker] Received 500 error, will retry (attempt ${attempt + 1}/${maxRetries + 1})`);
+            clearTimeout(timeout);
+            continue; // Retry this attempt
           }
-        ]
-        }),
-        signal: controller.signal
-    });
+          
+          throw new Error(errorMessage);
+        }
 
-    if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+        const data = await response.json() as any;
+        const apiCallDuration = Date.now() - apiCallStartTime;
+        console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms${attempt > 0 ? ` (after ${attempt} retries)` : ''}`);
+        // Additional debug information to verify LangDB gateway output
+        console.debug(`[LLMReranker] OpenAI raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
+        this.totalRequests++;
+        clearTimeout(timeout);
+        return data.choices[0].message.content;
+        
+      } catch (error) {
+        clearTimeout(timeout);
+        
+        // Only retry on 500 errors or network issues, not on timeouts or other errors
+        if (attempt < maxRetries && (
+          (error instanceof Error && error.message.includes('500 Internal Server Error')) ||
+          (error instanceof Error && error.message.includes('fetch failed'))
+        )) {
+          console.log(`[LLMReranker] API call failed, will retry: ${error.message}`);
+          continue; // Retry this attempt
+        }
+        
+        // Final attempt failed or non-retryable error
+        throw error;
+      }
     }
-
-    const data = await response.json() as any;
-      const apiCallDuration = Date.now() - apiCallStartTime;
-      console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms`);
-      // Additional debug information to verify LangDB gateway output
-      console.debug(`[LLMReranker] OpenAI raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
-      this.totalRequests++;
-    return data.choices[0].message.content;
-    } finally {
-      clearTimeout(timeout);
-    }
+    
+    // This should never be reached, but TypeScript requires it
+    throw new Error('Max retries exceeded');
   }
 
   /**
