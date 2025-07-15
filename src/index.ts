@@ -1199,23 +1199,58 @@ class CodebaseIndexingServer {
   }
 
   async run(): Promise<void> {
+    console.log('🚀 Starting Codebase Indexing MCP Server...');
+    
     // Initialize services
+    console.log('🔧 Initializing indexing and search services...');
     await this.indexingService.initialize();
     await this.searchService.initialize();
-    // Automatically index workspace if no index exists yet
-    const existingChunks = await this.indexingService.countIndexedChunks();
-    if (existingChunks === 0) {
-      console.log('No existing index detected – indexing workspace for the first time...');
-      await this.indexingService.indexDirectory(this.workspaceDir);
-    }
-
+    
+    // Auto-index workspace if no index exists
+    await this.ensureWorkspaceIndexed();
+    
     // Start watching workspace for real-time updates
+    console.log('👁️  Starting workspace file watcher for real-time updates...');
     this.workspaceWatcher.start();
     
+    // Connect to stdio transport
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     
-    console.error('Codebase Indexing MCP Server running on stdio');
+    console.error('✅ Codebase Indexing MCP Server running on stdio');
+    console.error('📂 Workspace:', this.workspaceDir);
+    console.error('🔍 Auto-indexing: Enabled');
+    console.error('👁️  File watching: Active');
+  }
+
+  /**
+   * Ensure the current workspace is indexed, automatically indexing if needed
+   */
+  private async ensureWorkspaceIndexed(): Promise<void> {
+    try {
+      console.log('🔍 Checking if workspace is already indexed...');
+      const existingChunks = await this.indexingService.countIndexedChunks();
+      
+      if (existingChunks === 0) {
+        console.log('📁 No existing index detected – automatically indexing workspace...');
+        console.log(`📂 Indexing directory: ${this.workspaceDir}`);
+        
+        const startTime = Date.now();
+        await this.indexingService.indexDirectory(this.workspaceDir);
+        const duration = Date.now() - startTime;
+        
+        const finalCount = await this.indexingService.countIndexedChunks();
+        console.log(`✅ Workspace indexing completed in ${duration}ms`);
+        console.log(`📊 Indexed ${finalCount} code chunks`);
+      } else {
+        console.log(`✅ Found existing index with ${existingChunks} code chunks`);
+        console.log('🔄 Workspace is ready - file watcher will handle incremental updates');
+      }
+    } catch (error) {
+      console.error('❌ Error during workspace indexing:', error);
+      console.error('⚠️  Server will continue but workspace may not be fully indexed');
+      // Don't throw - allow server to start even if auto-indexing fails
+    }
   }
 }
 

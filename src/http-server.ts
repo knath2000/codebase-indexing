@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
+import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
 
 const app = express();
@@ -39,6 +40,7 @@ let mcpServer: Server | null = null;
 let mcpClient: Client | null = null;
 let indexingService: IndexingService | null = null;
 let searchService: SearchService | null = null;
+let workspaceWatcher: WorkspaceWatcher | null = null;
 let servicesInitialized = false;
 
 // Store active sessions with SSE response objects
@@ -104,18 +106,82 @@ async function initializeMcpServer() {
 async function ensureServicesInitialized(): Promise<void> {
   if (servicesInitialized || !indexingService || !searchService) return;
   
-  console.log('Initializing services...');
+  console.log('🔧 Initializing services...');
   
   try {
     // Initialize services with network calls
     await indexingService.initialize();
     await searchService.initialize();
     
+    // Setup workspace auto-indexing and file watching
+    await ensureWorkspaceIndexed();
+    setupWorkspaceWatcher();
+    
     servicesInitialized = true;
-    console.log('Services initialized successfully');
+    console.log('✅ Services initialized successfully');
+    console.log('🔍 Auto-indexing: Enabled');
+    console.log('👁️  File watching: Active');
   } catch (error) {
-    console.error('Failed to initialize services:', error);
+    console.error('❌ Failed to initialize services:', error);
     throw error;
+  }
+}
+
+/**
+ * Ensure the current workspace is indexed, automatically indexing if needed
+ */
+async function ensureWorkspaceIndexed(): Promise<void> {
+  if (!indexingService) return;
+  
+  try {
+    console.log('🔍 Checking if workspace is already indexed...');
+    const existingChunks = await indexingService.countIndexedChunks();
+    const workspaceDir = process.cwd();
+    
+    if (existingChunks === 0) {
+      console.log('📁 No existing index detected – automatically indexing workspace...');
+      console.log(`📂 Indexing directory: ${workspaceDir}`);
+      
+      const startTime = Date.now();
+      await indexingService.indexDirectory(workspaceDir);
+      const duration = Date.now() - startTime;
+      
+      const finalCount = await indexingService.countIndexedChunks();
+      console.log(`✅ Workspace indexing completed in ${duration}ms`);
+      console.log(`📊 Indexed ${finalCount} code chunks`);
+    } else {
+      console.log(`✅ Found existing index with ${existingChunks} code chunks`);
+      console.log('🔄 Workspace is ready - file watcher will handle incremental updates');
+    }
+  } catch (error) {
+    console.error('❌ Error during workspace indexing:', error);
+    console.error('⚠️  Server will continue but workspace may not be fully indexed');
+    // Don't throw - allow server to start even if auto-indexing fails
+  }
+}
+
+/**
+ * Setup workspace file watcher for real-time updates
+ */
+function setupWorkspaceWatcher(): void {
+  if (!indexingService || workspaceWatcher) return;
+  
+  try {
+    const config = loadConfig();
+    const workspaceDir = process.cwd();
+    
+    workspaceWatcher = new WorkspaceWatcher(
+      workspaceDir,
+      indexingService,
+      config.supportedExtensions,
+      config.excludePatterns
+    );
+    
+    console.log('👁️  Starting workspace file watcher for real-time updates...');
+    workspaceWatcher.start();
+  } catch (error) {
+    console.error('❌ Error setting up workspace watcher:', error);
+    console.error('⚠️  File watching disabled - manual reindexing will be required');
   }
 }
 
