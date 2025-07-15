@@ -1,4 +1,16 @@
-import { SearchResult, LLMRerankerRequest, LLMRerankerResponse, Config } from '../types.js';
+import { OpenAI } from 'openai';
+import type { Config } from '../types.js';
+
+interface SearchResult {
+  chunkId: string;
+  score: number;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  chunkType?: string;
+  language?: string;
+}
 
 export class LLMRerankerService {
   private apiKey: string | undefined;
@@ -9,390 +21,198 @@ export class LLMRerankerService {
   private errorCount: number = 0;
   private totalRequests: number = 0;
   private maxDurationsToStore: number = 100; // Store up to 100 durations
-  private baseUrl?: string;
-  private projectId?: string; // LangDB Project ID
+  private client: OpenAI | undefined;
 
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
     this.model = config.llmRerankerModel;
     this.enabled = config.enableLLMReranking && !!this.apiKey;
     this.timeoutMs = config.llmRerankerTimeoutMs;
-    this.baseUrl = (config as any).llmRerankerBaseUrl;
-    this.projectId = (config as any).llmRerankerProjectId; // LangDB Project ID
 
-    if (this.enabled) {
-      console.log(`[LLMRerankerService] Initialized with model: ${this.model}, timeout: ${this.timeoutMs}ms`);
-      if (this.baseUrl) {
-        console.log(`[LLMRerankerService] Using custom base URL: ${this.baseUrl}`);
-        if (this.projectId) {
-          console.log(`[LLMRerankerService] LangDB project ID configured: ${this.projectId.substring(0, 8)}...`);
-        }
-      }
+    // Initialize OpenAI client with LangDB configuration
+    if (this.enabled && this.apiKey) {
+      const baseUrl = (config as any).llmRerankerBaseUrl;
+      
+      this.client = new OpenAI({
+        baseURL: baseUrl || 'https://api.openai.com/v1',
+        apiKey: this.apiKey,
+        timeout: this.timeoutMs
+      });
+
+      console.log(`[LLMRerankerService] Initialized with OpenAI SDK`);
+      console.log(`[LLMRerankerService] Model: ${this.model}`);
+      console.log(`[LLMRerankerService] Base URL: ${baseUrl || 'https://api.openai.com/v1'}`);
+      console.log(`[LLMRerankerService] Timeout: ${this.timeoutMs}ms`);
     }
   }
 
-  /**
-   * Check if LLM re-ranking is available and enabled
-   */
-  isEnabled(): boolean {
-    return this.enabled;
-  }
+  async rerank(
+    query: string,
+    searchResults: SearchResult[],
+    limit: number = 10
+  ): Promise<{ results: SearchResult[]; reranked: boolean }> {
+    const startTime = Date.now();
+    this.totalRequests++;
 
-  /**
-   * Test connection to LLM Reranker
-   */
-  async testConnection(): Promise<boolean> {
-    if (!this.enabled) {
-      return true; // Consider as connected if disabled by config
+    if (!this.enabled || !this.client) {
+      console.log('[LLMReranker] Re-ranking disabled or not configured, returning original results');
+      return { results: searchResults.slice(0, limit), reranked: false };
     }
+
+    if (searchResults.length <= 1) {
+      console.log('[LLMReranker] Only 1 or fewer results, skipping re-ranking');
+      return { results: searchResults, reranked: false };
+    }
+
     try {
-      const startTime = Date.now();
-      // Make a dummy request to test connectivity
-      await this.callLLMAPI('test', startTime);
-      this.addRequestDuration(Date.now() - startTime);
-      return true;
+      console.log(`[LLMReranker] Re-ranking ${searchResults.length} results for query: "${query}"`);
+      
+      const prompt = this.buildReRankingPrompt(query, searchResults);
+      const rankedIndices = await this.callLLMAPI(prompt);
+      
+      // Apply the ranking
+      const rerankedResults = this.applyRanking(searchResults, rankedIndices, limit);
+      
+      const duration = Date.now() - startTime;
+      this.recordDuration(duration);
+      
+      console.log(`[LLMReranker] Re-ranking completed successfully in ${duration}ms`);
+      return { results: rerankedResults, reranked: true };
+      
     } catch (error) {
-      console.error('LLM Reranker connection test failed:', error);
       this.errorCount++;
-      return false;
+      const duration = Date.now() - startTime;
+      this.recordDuration(duration);
+      
+      console.error(`[LLMReranker] Re-ranking failed after ${duration}ms:`, error);
+      console.log('[LLMReranker] Falling back to original results');
+      return { results: searchResults.slice(0, limit), reranked: false };
     }
   }
 
-  /**
-   * Get cache size (dummy for now as no cache is implemented in reranker)
-   */
-  cacheSize(): number {
-    return 0;
-  }
-
-  /**
-   * Get memory usage (dummy for now)
-   */
-  memoryUsage(): number {
-    return 0;
-  }
-
-  /**
-   * Get average request latency for LLM reranker
-   */
-  getAverageLatency(): number {
-    if (this.requestDurations.length === 0) {
-      return 0;
-    }
-    const sum = this.requestDurations.reduce((a, b) => a + b, 0);
-    return sum / this.requestDurations.length;
-  }
-
-  /**
-   * Get error rate for LLM reranker
-   */
-  getErrorRate(): number {
-    return this.totalRequests === 0 ? 0 : (this.errorCount / this.totalRequests) * 100;
-  }
-
-  private addRequestDuration(duration: number): void {
-    this.requestDurations.push(duration);
-    if (this.requestDurations.length > this.maxDurationsToStore) {
-      this.requestDurations.shift(); // Remove the oldest duration
-    }
-  }
-
-  /**
-   * Re-rank search results using LLM for improved relevance
-   */
-  async rerank(request: LLMRerankerRequest, requestStartTime: number = Date.now()): Promise<LLMRerankerResponse> {
-    if (!this.enabled) {
-      // Return original results if re-ranking is disabled
-      return {
-        rerankedResults: request.candidates.slice(0, request.maxResults),
-        reasoning: 'LLM re-ranking disabled',
-        confidence: 1.0
-      };
+  private async callLLMAPI(prompt: string): Promise<number[]> {
+    if (!this.client) {
+      throw new Error('OpenAI client not initialized');
     }
 
+    console.log(`[LLMReranker] Calling ${this.model} via OpenAI SDK...`);
+    
     try {
-      const rerankStartTime = Date.now();
-      console.log(`🧠 [LLMReranker] Re-ranking ${request.candidates.length} results for query: "${request.query}"`);
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a helpful assistant that ranks search results based on relevance to a query. You must respond with valid JSON only.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 500
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('No content in LLM response');
+      }
+
+      console.log(`[LLMReranker] Raw LLM response: ${content}`);
       
-      // Prepare the prompt for LLM re-ranking
-      const prompt = this.buildRerankingPrompt(request);
+      // Parse the JSON response
+      const parsed = JSON.parse(content);
+      const rankedIndices = parsed.rankedIndices || parsed.ranking || parsed.indices;
       
-      // Call the LLM API
-      const response = await this.callLLMAPI(prompt, requestStartTime);
+      if (!Array.isArray(rankedIndices)) {
+        throw new Error('LLM response does not contain a valid rankedIndices array');
+      }
+
+      console.log(`[LLMReranker] Parsed ranking: [${rankedIndices.join(', ')}]`);
+      return rankedIndices;
       
-      // Parse the response and re-order results
-      const rerankedResults = this.parseRerankingResponse(response, request.candidates, request.maxResults);
-      
-      const rerankDuration = Date.now() - rerankStartTime;
-      console.log(`✅ [LLMReranker] Re-ranked to ${rerankedResults.length} results in ${rerankDuration}ms`);
-      
-      return {
-        rerankedResults,
-        reasoning: 'LLM-based relevance scoring',
-        confidence: 0.9
-      };
-      
-    } catch (error) {
-      console.error(`❌ [LLMReranker] Re-ranking failed:`, error);
-      
-      // Fallback to original results on error
-      return {
-        rerankedResults: request.candidates.slice(0, request.maxResults),
-        reasoning: `Re-ranking failed: ${error instanceof Error ? error.message : String(error)}`,
-        confidence: 0.5
-      };
+    } catch (error: any) {
+      console.error(`[LLMReranker] OpenAI SDK error:`, error.message);
+      throw error;
     }
   }
 
-  /**
-   * Build the prompt for LLM re-ranking
-   */
-  private buildRerankingPrompt(request: LLMRerankerRequest): string {
-    const candidates = request.candidates.map((result, index) => {
-      const metadata = result.chunk.metadata;
-      const snippet = result.snippet.length > 120 ? result.snippet.slice(0, 120) + '…' : result.snippet;
-      
-      // Extract fileKind from payload if available
-      const fileKind = (result.chunk as any).fileKind || 
-                      ((result.chunk.filePath.includes('.md') || 
-                        result.chunk.filePath.includes('README') || 
-                        result.chunk.filePath.includes('docs/') ||
-                        result.chunk.filePath.includes('memory-bank/')) ? 'docs' : 'code');
-      
-      return `
-CANDIDATE ${index + 1}:
-File: ${result.chunk.filePath}
-File Kind: ${fileKind} ${fileKind === 'code' ? '🔥 IMPLEMENTATION' : '📝 DOCUMENTATION'}
-Type: ${result.chunk.chunkType}
-Language: ${result.chunk.language}
-Function: ${result.chunk.functionName || 'N/A'}
-Class: ${result.chunk.className || 'N/A'}
-Lines: ${result.chunk.startLine}-${result.chunk.endLine}
-Similarity Score: ${result.score.toFixed(3)}
-Is Test File: ${metadata.isTest ? 'Yes' : 'No'}
-Code Snippet:
-\`\`\`${result.chunk.language}
-${snippet}
-\`\`\`
-`;
+  private buildReRankingPrompt(query: string, results: SearchResult[]): string {
+    const resultSummaries = results.map((result, index) => {
+      const fileName = result.filePath.split('/').pop() || result.filePath;
+      const preview = result.content.substring(0, 200).replace(/\n/g, ' ');
+      return `${index}: ${fileName} (${result.chunkType || 'unknown'}) - ${preview}...`;
     }).join('\n');
 
-    return `You are a code search expert specializing in finding IMPLEMENTATION CODE. Your task is to re-rank code search results based on their relevance to the user's query, with an EXTREME PREFERENCE for implementation code over documentation.
+    return `Given the search query: "${query}"
 
-USER QUERY: "${request.query}"
+Rank these ${results.length} search results by relevance (most relevant first):
 
-SEARCH CANDIDATES:
-${candidates}
+${resultSummaries}
 
-CRITICAL RANKING RULES (in order of importance):
-1. **🔥 IMPLEMENTATION FIRST**: Candidates marked "🔥 IMPLEMENTATION" (File Kind: code) should ALWAYS rank higher than "📝 DOCUMENTATION" candidates, even if documentation has higher similarity scores
-2. **CODE ENTITY PRIORITY**: Candidates with chunkType 'function', 'class', 'method', 'interface' are premium - rank these at the top
-3. **ACTUAL CODE RELEVANCE**: Analyze the code snippet for direct relevance to the query - look for matching function names, variable names, logic patterns
-4. **IMPLEMENTATION OVER EXPLANATION**: A function that implements the behavior beats documentation that explains the behavior
-5. **EXACT MATCHES WIN**: Exact function/class name matches should rank highest
-6. **WORKING CODE**: Complete, compilable code snippets rank higher than partial or example code
-7. **RECENT/ACTIVE FILES**: Non-test files (.ts, .js, .py) over test files when both are relevant
-
-SCORING GUIDELINES:
-- Start with "🔥 IMPLEMENTATION" candidates - these should dominate your ranking
-- Only consider "📝 DOCUMENTATION" if no relevant implementation code exists
-- A mediocre implementation function is better than perfect documentation
-- Boost based on chunkType: function > class > method > interface > generic
-- Penalize documentation files (.md, README, docs/) unless explicitly asking for docs
-
-Expected JSON format:
+Respond with JSON only in this exact format:
 {
-  "rankedIndices": [2, 0, 4, 1],
-  "explanation": "Ranked implementation code first: function X directly implements the query, class Y provides relevant structure..."
+  "rankedIndices": [most_relevant_index, second_most_relevant_index, ...]
 }
 
-JSON Response:`;
+Include ALL indices from 0 to ${results.length - 1} in your ranking.`;
   }
 
-  /**
-   * Call the LLM API for re-ranking
-   */
-  private async callLLMAPI(prompt: string, requestStartTime: number): Promise<string> {
-    if (!this.apiKey) {
-      throw new Error('No API key configured for LLM re-ranking');
-    }
-    // Always use OpenAI-compatible API (supports LangDB gateway and direct OpenAI)
-    return this.callOpenAIAPI(prompt, requestStartTime);
-  }
-
-
-
-  /**
-   * Call OpenAI GPT API with timeout and retry logic
-   */
-  private async callOpenAIAPI(prompt: string, requestStartTime: number): Promise<string> {
-    const maxRetries = 5; // Increased from 3 to handle LangDB infrastructure issues
-    const baseDelay = 2000; // Increased from 1000ms to 2000ms for better stability
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const controller = new AbortController();
-      const remainingTime = this.timeoutMs - (Date.now() - requestStartTime);
-      const timeoutMs = Math.max(2000, remainingTime); // Increased minimum timeout
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      
-      try {
-        if (attempt > 0) {
-          const delay = baseDelay * Math.pow(2, attempt - 1); // Exponential backoff
-          console.log(`[LLMReranker] Retrying OpenAI API call (attempt ${attempt + 1}/${maxRetries + 1}) after ${delay}ms delay...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        } else {
-          console.log(`[LLMReranker] Calling OpenAI API with timeout ${timeoutMs}ms...`);
-        }
-        
-        const apiCallStartTime = Date.now();
-        const endpoint = this.baseUrl ? `${this.baseUrl.replace(/\/?$/, '')}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey!}`,
-          'x-api-key': this.apiKey!
-        };
-        
-        // Add LangDB project ID header if available
-        if (this.projectId) {
-          headers['x-project-id'] = this.projectId;
-        }
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            model: this.model,
-            max_tokens: 400,
-            temperature: 0.1,
-            messages: [
-              {
-                role: 'user',
-                content: prompt
-              }
-            ]
-          }),
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          const errorMessage = `OpenAI API error: ${response.status} ${response.statusText}`;
-          
-          // Only retry on 500 errors (LangDB gateway issues)
-          if (response.status === 500 && attempt < maxRetries) {
-            console.log(`[LLMReranker] Received 500 error, will retry (attempt ${attempt + 1}/${maxRetries + 1})`);
-            clearTimeout(timeout);
-            continue; // Retry this attempt
-          }
-          
-          throw new Error(errorMessage);
-        }
-
-        const data = await response.json() as any;
-        const apiCallDuration = Date.now() - apiCallStartTime;
-        console.log(`[LLMReranker] OpenAI API call completed in ${apiCallDuration}ms${attempt > 0 ? ` (after ${attempt} retries)` : ''}`);
-        // Additional debug information to verify LangDB gateway output
-        console.debug(`[LLMReranker] OpenAI raw response snippet: ${JSON.stringify(data).slice(0, 300)}...`);
-        this.totalRequests++;
-        clearTimeout(timeout);
-        return data.choices[0].message.content;
-        
-      } catch (error) {
-        clearTimeout(timeout);
-        
-        // Only retry on 500 errors or network issues, not on timeouts or other errors
-        if (attempt < maxRetries && (
-          (error instanceof Error && error.message.includes('500 Internal Server Error')) ||
-          (error instanceof Error && error.message.includes('fetch failed'))
-        )) {
-          console.log(`[LLMReranker] API call failed, will retry: ${error.message}`);
-          continue; // Retry this attempt
-        }
-        
-        // Final attempt failed or non-retryable error
-        throw error;
-      }
-    }
-    
-    // This should never be reached, but TypeScript requires it
-    throw new Error('Max retries exceeded');
-  }
-
-  /**
-   * Parse the LLM response and re-order results
-   */
-  private parseRerankingResponse(
-    response: string, 
-    candidates: SearchResult[], 
-    maxResults: number
+  private applyRanking(
+    originalResults: SearchResult[],
+    rankedIndices: number[],
+    limit: number
   ): SearchResult[] {
     try {
-      // Extract JSON from the response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in LLM response');
+      // Validate indices
+      const validIndices = rankedIndices.filter(
+        (idx) => typeof idx === 'number' && idx >= 0 && idx < originalResults.length
+      );
+
+      if (validIndices.length === 0) {
+        console.warn('[LLMReranker] No valid indices in ranking, using original order');
+        return originalResults.slice(0, limit);
       }
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      const rankedIndices = parsed.rankedIndices as number[];
-
-      if (!Array.isArray(rankedIndices)) {
-        throw new Error('Invalid ranked indices format');
-      }
-
-      // Re-order results based on LLM ranking
-      const rerankedResults: SearchResult[] = [];
+      // Apply ranking
+      const rerankedResults = validIndices.map((idx) => originalResults[idx]);
       
-      for (const index of rankedIndices.slice(0, maxResults)) {
-        if (index >= 0 && index < candidates.length) {
-          const result = { ...candidates[index] };
-          // Store the original score and add re-ranking score
-          result.rerankedScore = 1.0 - (rerankedResults.length * 0.1); // Decreasing score
-          rerankedResults.push(result);
-        }
-      }
+      // Add any missing results at the end
+      const usedIndices = new Set(validIndices);
+      const missingResults = originalResults.filter((_, idx) => !usedIndices.has(idx));
+      rerankedResults.push(...missingResults);
 
-      // If we don't have enough results, fill with remaining candidates
-      if (rerankedResults.length < maxResults) {
-        const usedIndices = new Set(rankedIndices);
-        for (let i = 0; i < candidates.length && rerankedResults.length < maxResults; i++) {
-          if (!usedIndices.has(i)) {
-            const result = { ...candidates[i] };
-            result.rerankedScore = 0.5 - (rerankedResults.length * 0.05);
-            rerankedResults.push(result);
-          }
-        }
-      }
-
-      return rerankedResults;
-
+      console.log(`[LLMReranker] Applied ranking: ${validIndices.slice(0, 5).join(', ')}${validIndices.length > 5 ? '...' : ''}`);
+      return rerankedResults.slice(0, limit);
+      
     } catch (error) {
-      console.warn(`Failed to parse LLM re-ranking response: ${error}`);
-      console.warn(`Response was: ${response}`);
-      
-      // Fallback to original order
-      return candidates.slice(0, maxResults).map((result, _index) => ({
-        ...result,
-        rerankedScore: result.score * 0.9 // Slightly lower than original
-      }));
+      console.error('[LLMReranker] Error applying ranking:', error);
+      return originalResults.slice(0, limit);
     }
   }
 
-  /**
-   * Get re-ranking statistics
-   */
-  getStats(): {
-    enabled: boolean;
-    model: string;
-    totalRequests: number;
-    successRate: number;
-    averageLatency: number;
-  } {
+  private recordDuration(duration: number): void {
+    this.requestDurations.push(duration);
+    if (this.requestDurations.length > this.maxDurationsToStore) {
+      this.requestDurations.shift();
+    }
+  }
+
+  getStats() {
+    const avgDuration = this.requestDurations.length > 0 
+      ? this.requestDurations.reduce((a, b) => a + b, 0) / this.requestDurations.length 
+      : 0;
+
     return {
       enabled: this.enabled,
       model: this.model,
       totalRequests: this.totalRequests,
-      successRate: this.getErrorRate() === 0 ? 1 : 1 - (this.errorCount / this.totalRequests),
-      averageLatency: this.getAverageLatency()
+      errorCount: this.errorCount,
+      errorRate: this.totalRequests > 0 ? (this.errorCount / this.totalRequests) * 100 : 0,
+      avgDurationMs: Math.round(avgDuration),
+      timeoutMs: this.timeoutMs,
+      requestCount: this.requestDurations.length
     };
   }
 } 

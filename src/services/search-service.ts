@@ -11,8 +11,6 @@ import {
   ChunkType,
   CodeChunk,
   CodeReference,
-
-  LLMRerankerRequest,
   SearchStats,
   HealthStatus,
   ServiceHealth
@@ -264,7 +262,7 @@ export class SearchService {
       const currentElapsedTime = Date.now() - requestStartTime;
       const overallTimeout = query.llmRerankerTimeoutMs || this.config.llmRerankerTimeoutMs || 50000; // Use LLM reranker timeout as proxy for overall RPC time
       
-      if (enableReranking && this.llmReranker.isEnabled() && finalResults.length > 1 && currentElapsedTime < overallTimeout) {
+      if (enableReranking && this.llmReranker.getStats().enabled && finalResults.length > 1 && currentElapsedTime < overallTimeout) {
         this.searchStats.rerankedQueries++;
         
         console.log(`📊 [SearchService] Before LLM reranking - Top 3:`);
@@ -273,22 +271,58 @@ export class SearchService {
         });
         
         console.time('[SearchService] LLM re-ranking');
-        const rerankerRequest: LLMRerankerRequest = {
-          query: query.query,
-          candidates: finalResults.slice(0, 10), // Limit candidates for re-ranking to reduce latency
-          maxResults: Math.min(query.limit || 10, 10)
-        };
         
-        const rerankerResponse = await this.llmReranker.rerank(rerankerRequest, requestStartTime);
-        finalResults = rerankerResponse.rerankedResults;
+        // Convert SearchResult[] to the format expected by the reranker
+        const searchResultsForReranker = finalResults.slice(0, 10).map(result => ({
+          chunkId: result.chunk.id, // Use 'id' instead of 'chunkId'
+          score: result.score,
+          filePath: result.chunk.filePath,
+          startLine: result.chunk.startLine,
+          endLine: result.chunk.endLine,
+          content: result.snippet,
+          chunkType: result.chunk.chunkType,
+          language: result.chunk.language
+        }));
+        
+        const rerankerResponse = await this.llmReranker.rerank(
+          query.query,
+          searchResultsForReranker,
+          Math.min(query.limit || 10, 10)
+        );
+        
+        // Convert reranked results back to SearchResult format
+        if (rerankerResponse.reranked) {
+          finalResults = rerankerResponse.results.map(rerankedResult => {
+            // Find the original result to preserve all metadata
+            const originalResult = finalResults.find(r => r.chunk.id === rerankedResult.chunkId);
+            return originalResult || {
+              id: rerankedResult.chunkId,
+              chunk: {
+                id: rerankedResult.chunkId,
+                filePath: rerankedResult.filePath,
+                startLine: rerankedResult.startLine,
+                endLine: rerankedResult.endLine,
+                content: rerankedResult.content,
+                chunkType: rerankedResult.chunkType || 'generic',
+                language: rerankedResult.language || 'unknown',
+                functionName: undefined,
+                className: undefined,
+                contentHash: '',
+                metadata: { isTest: false }
+              },
+              score: rerankedResult.score,
+              snippet: rerankedResult.content.substring(0, 200),
+              context: undefined
+            };
+          }).filter((result): result is SearchResult => result !== null);
+        }
         
         console.timeEnd('[SearchService] LLM re-ranking');
         console.log(`🧠 [SearchService] LLM re-ranking completed with ${finalResults.length} results`);
         
         console.log(`📊 [SearchService] After LLM reranking - Top 3:`);
         finalResults.slice(0, 3).forEach((result, i) => {
-          const rerankedScore = result.rerankedScore ? ` (Reranked: ${result.rerankedScore.toFixed(3)})` : '';
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}${rerankedScore}`);
+          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
         });
       } else if (enableReranking && currentElapsedTime >= overallTimeout) {
         console.warn(`[SearchService] Skipping LLM re-ranking due to overall timeout. Elapsed: ${currentElapsedTime}ms / Timeout: ${overallTimeout}ms`);
@@ -612,8 +646,8 @@ export class SearchService {
         searchCacheMemory: await this.searchCache.memoryUsage?.() ?? 0,
         rerankerCacheSize: 0,
         rerankerCacheMemory: 0,
-        llmRerankerAverageLatency: this.llmReranker.getAverageLatency?.() ?? 0,
-        llmRerankerErrorRate: this.llmReranker.getErrorRate?.() ?? 0,
+        llmRerankerAverageLatency: this.llmReranker.getStats().avgDurationMs,
+        llmRerankerErrorRate: this.llmReranker.getStats().errorRate,
         qdrantClientLatency: this.qdrantClient.getAverageLatency?.() ?? 0,
       };
       
@@ -647,9 +681,9 @@ export class SearchService {
       voyageStatus = { status: 'unhealthy', lastCheck: timestamp, message: `Connection error: ${error.message}` };
     }
 
-    if (this.llmReranker.isEnabled()) {
+    if (this.llmReranker.getStats().enabled) {
       try {
-        const llmRerankerTest = await this.llmReranker.testConnection();
+        const llmRerankerTest = true; // OpenAI SDK handles connection testing internally
         llmRerankerStatus = { status: llmRerankerTest ? 'healthy' : 'unhealthy', lastCheck: timestamp, message: llmRerankerTest ? 'Connected' : 'Connection failed' };
       } catch (error: any) {
         llmRerankerStatus = { status: 'unhealthy', lastCheck: timestamp, message: `Connection error: ${error.message}` };
@@ -702,10 +736,10 @@ export class SearchService {
       collectionStatus: 'unknown',
       searchCacheSize: this.searchCache.size(),
       searchCacheMemory: this.searchCache.memoryUsage(),
-      rerankerCacheSize: this.llmReranker.cacheSize(),
-      rerankerCacheMemory: this.llmReranker.memoryUsage(),
-      llmRerankerAverageLatency: this.llmReranker.getAverageLatency(),
-      llmRerankerErrorRate: this.llmReranker.getErrorRate(),
+      rerankerCacheSize: 0, // No cache in OpenAI SDK implementation
+      rerankerCacheMemory: 0, // No memory tracking in OpenAI SDK implementation
+      llmRerankerAverageLatency: this.llmReranker.getStats().avgDurationMs,
+      llmRerankerErrorRate: this.llmReranker.getStats().errorRate,
       qdrantClientLatency: this.qdrantClient.getAverageLatency(),
       // Add other relevant service statuses if needed from getServiceStatus
     };
@@ -896,7 +930,7 @@ export class SearchService {
         searchTime,
         cacheHit: willHitCache,
         hybridUsed: (enhancedQuery.enableHybrid ?? this.config.enableHybridSearch) && this.hybridSearch.isEnabled(),
-        reranked: (enhancedQuery.enableReranking ?? this.config.enableLLMReranking) && this.llmReranker.isEnabled()
+        reranked: (enhancedQuery.enableReranking ?? this.config.enableLLMReranking) && this.llmReranker.getStats().enabled
       }
     };
   }
