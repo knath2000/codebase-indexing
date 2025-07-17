@@ -390,6 +390,24 @@ app.get('/mcp', async (_req: Request, res: Response) => {
   }
 });
 
+// Handle GET requests to /message – some clients may attempt to establish an SSE stream here.
+// If the client includes an `Accept: text/event-stream` header we'll treat this exactly like
+// the primary /mcp SSE endpoint. Otherwise we just return a simple JSON OK so that the
+// request doesn’t 404 and cause Cursor to mark the server as unhealthy.
+app.get('/message', (req: Request, res: Response) => {
+  const wantsSse = (req.headers.accept || '').includes('text/event-stream');
+
+  // Re-use the same SSE logic as /mcp when the client explicitly requests SSE.
+  if (wantsSse) {
+    // Delegate to the existing SSE handler by redirecting. We keep the query string (sessionId etc.) intact.
+    // 307 preserves method + body (GET has none) and is safe for SSE clients.
+    return res.redirect(307, `/mcp${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`);
+  }
+
+  // Otherwise, just acknowledge the request so that health probes / fallback GETs succeed.
+  res.json({ status: 'ok', endpoint: '/message' });
+});
+
 // Handle POST requests for JSON-RPC messages (client-to-server)
 app.post('/message', async (req: Request, res: Response): Promise<void> => {
   try {
