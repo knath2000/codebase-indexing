@@ -54,7 +54,8 @@ primary_region = "dfw"
 
 # Machine sizing – one always-on instance (upgrade later if needed)
 [vm]
-  size = "shared-cpu-1x"   # 1 vCPU / 1 GB RAM
+  size = "shared-cpu-1x"   # 1 shared vCPU / 1 GB RAM
+  memory = "1gb"
 
 # Machines-specific flags to prevent Fly from spinning up extra instances
 [http_service]
