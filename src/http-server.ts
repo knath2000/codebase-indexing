@@ -390,20 +390,79 @@ app.get('/mcp', async (_req: Request, res: Response) => {
   }
 });
 
-// Handle GET requests to /message – some clients may attempt to establish an SSE stream here.
-// If the client includes an `Accept: text/event-stream` header we'll treat this exactly like
-// the primary /mcp SSE endpoint. Otherwise we just return a simple JSON OK so that the
-// request doesn’t 404 and cause Cursor to mark the server as unhealthy.
+// Handle GET requests to /message – support both SSE (Cursor main channel) and simple JSON health checks
 app.get('/message', (req: Request, res: Response) => {
   const wantsSse = (req.headers.accept || '').includes('text/event-stream');
 
+  // ---------------------------------------------------------------------------
+  //  A. SSE: this is the primary message stream AFTER the initial /mcp redirect
+  // ---------------------------------------------------------------------------
   if (wantsSse) {
-    // Treat exactly like /mcp SSE endpoint (reuse logic)
-    // @ts-ignore
-    return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
+    // 1. Extract & validate sessionId
+    const sessionId = (req.query.sessionId as string) || '';
+    if (!sessionId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing sessionId query param' }));
+      return;
+    }
+
+    const session = activeSessions.get(sessionId);
+    if (!session) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Unknown sessionId: ${sessionId}` }));
+      return;
+    }
+
+    // 2. Promote this Response to the persistent SSE channel for that session
+    session.sseResponse = res;
+
+    // 3. Standard SSE headers (mirrors /mcp)
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control',
+      'X-Session-ID': sessionId,
+      'X-Instance-ID': process.env.FLY_ALLOC_ID || 'local',
+    });
+
+    console.log(`✅ /message SSE connected for session ${sessionId}`);
+
+    // 4. Send the REQUIRED initialized event so Cursor knows we are ready
+    res.write('event: initialized\n');
+    res.write('data: {}\n\n');
+    console.log('📨 Sent initialized event');
+
+    // 5. Keep-alive comment ping every 30 s
+    const keepAliveInterval = setInterval(() => {
+      if (res.destroyed) {
+        clearInterval(keepAliveInterval);
+        return;
+      }
+      res.write(': keepalive\n\n');
+      session.lastHeartbeat = new Date();
+    }, 30000);
+
+    // 6. Cleanup on close / error
+    res.on('close', () => {
+      clearInterval(keepAliveInterval);
+      activeSessions.delete(sessionId);
+      console.log(`🔌 /message SSE closed for session ${sessionId}`);
+    });
+
+    res.on('error', (err) => {
+      clearInterval(keepAliveInterval);
+      activeSessions.delete(sessionId);
+      console.error(`💥 /message SSE error for session ${sessionId}:`, err);
+    });
+
+    return; // Important – do not fall through to JSON handler
   }
 
-  // Non-SSE callers just get a simple OK (prevents 404s in health probes)
+  // ---------------------------------------------------------------------------
+  //  B. Non-SSE: lightweight health/OK response
+  // ---------------------------------------------------------------------------
   res.json({ status: 'ok', endpoint: '/message' });
 });
 
