@@ -93,23 +93,11 @@ async function handleJsonRpc(req: Request, res: Response) {
   }
 }
 
-// (B) SSE handler – used by GET /mcp and optionally GET /
-async function handleSse(req: Request, res: Response) {
-  // Reuse existing implementation by calling the original GET /mcp logic.
-  // We wrap it in a Promise so TypeScript treats both handlers uniformly.
-  return new Promise<void>((resolve) => {
-    // We bind the current request/response to the existing /mcp handler code
-    // by invoking the function reference that Express stored under that route.
-    // Since we are inside the same module, we can directly call the callback.
-    // Locate the route layer for path '/mcp' and method 'get'
-    const layer = (app as any)._router?.stack?.find((l: any) => l.route && l.route.path === '/mcp' && l.route.methods.get);
-    if (layer) {
-      layer.handle_request(req, res, () => resolve());
-    } else {
-      res.status(500).json({ error: 'SSE handler not found' });
-      resolve();
-    }
-  });
+// (B) SSE handler – used by GET / (when Accept: text/event-stream)
+function handleSse(_req: Request, res: Response) {
+  // Simply redirect the client to the canonical SSE endpoint.
+  // Using 307 preserves the HTTP method (GET) and headers.
+  res.redirect(307, '/mcp');
 }
 
 // -----------------------------------------------------------------------------
