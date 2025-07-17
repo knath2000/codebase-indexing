@@ -24,16 +24,26 @@ app.get('/health', (_req: Request, res: Response) => {
 });
 
 // Root endpoint
-app.get('/', (_req: Request, res: Response) => {
+app.get('/', (req: Request, res: Response) => {
+  const wantsSse = (req.headers.accept || '').includes('text/event-stream');
+  if (wantsSse) {
+    // Delegate to /mcp SSE handler
+    // @ts-ignore
+    return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
+  }
   res.json({ 
     message: 'MCP Codebase Indexing Server',
     version: '1.0.0',
     transport: 'HTTP SSE',
-    endpoints: {
-      mcp: '/mcp',
-      health: '/health'
-    }
+    endpoints: { mcp: '/mcp', health: '/health' }
   });
+});
+
+// Expose the same JSON-RPC handler at the root path to support clients that POST to base URL
+app.post('/', async (req: Request, res: Response) => {
+  // Reuse the /mcp handler logic by delegating to it
+  // @ts-ignore
+  return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
 });
 
 // Global MCP server instance
