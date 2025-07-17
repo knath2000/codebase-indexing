@@ -397,14 +397,13 @@ app.get('/mcp', async (_req: Request, res: Response) => {
 app.get('/message', (req: Request, res: Response) => {
   const wantsSse = (req.headers.accept || '').includes('text/event-stream');
 
-  // Re-use the same SSE logic as /mcp when the client explicitly requests SSE.
   if (wantsSse) {
-    // Delegate to the existing SSE handler by redirecting. We keep the query string (sessionId etc.) intact.
-    // 307 preserves method + body (GET has none) and is safe for SSE clients.
-    return res.redirect(307, `/mcp${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`);
+    // Treat exactly like /mcp SSE endpoint (reuse logic)
+    // @ts-ignore
+    return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
   }
 
-  // Otherwise, just acknowledge the request so that health probes / fallback GETs succeed.
+  // Non-SSE callers just get a simple OK (prevents 404s in health probes)
   res.json({ status: 'ok', endpoint: '/message' });
 });
 
