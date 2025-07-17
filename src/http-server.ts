@@ -377,6 +377,7 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
       
       switch (method) {
         case 'initialize':
+          // Provide server information so that Cursor can mark the MCP server as healthy
           result = {
             protocolVersion: '2024-11-05',
             capabilities: {
