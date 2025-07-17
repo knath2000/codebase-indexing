@@ -641,12 +641,8 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
       
       console.log(`Sending JSON-RPC response for ${method} (id: ${id}):`, JSON.stringify(response, null, 2));
       
-      // Send response via SSE
-      session.sseResponse.write(`event: message\n`);
-      session.sseResponse.write(`data: ${JSON.stringify(response)}\n\n`);
-      
-      // Send HTTP acknowledgment
-      res.status(200).send('OK');
+      // Return the response in the HTTP body (Cursor expects this)
+      res.status(200).json(response);
       
       return;
       
@@ -662,14 +658,8 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
       };
       console.log('Sending error response:', JSON.stringify(errorResponse, null, 2));
       
-      // Send error response via SSE
-      if (session?.sseResponse && !session.sseResponse.destroyed) {
-        session.sseResponse.write(`event: message\n`);
-        session.sseResponse.write(`data: ${JSON.stringify(errorResponse)}\n\n`);
-      }
-      
-      // Send HTTP acknowledgment
-      res.status(500).send('Error processed');
+      // Return error in HTTP body
+      res.status(500).json(errorResponse);
     }
     
   } catch (error) {
