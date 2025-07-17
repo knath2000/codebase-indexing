@@ -6,7 +6,7 @@
 **Last Major Update**: January 15, 2025  
 **Deployment Status**: Live on Fly.io with full functionality including LLM reranking  
 **MCP Integration**: ✅ Working (Green circle with 12 tools in Cursor)  
-**LLM Reranking**: ✅ Claude-4 Opus via LangDB gateway - 100% operational
+**LLM Reranking**: ✅ gpt-4.1-mini via LangDB gateway - 100% operational
 
 ## ✅ Completed Features
 
@@ -34,7 +34,7 @@
 - [x] **Context Retrieval**: Code context around specific chunks
 - [x] **Similarity Finding**: Find similar code chunks
 - [x] **Filtering Options**: Language, chunk type, file path filters
-- [x] **LLM Re-ranking**: ✅ **FULLY OPERATIONAL** - Claude-4 Opus via LangDB gateway - 100% operational. Production deployment January 15, 2025.
+- [x] **LLM Re-ranking**: ✅ **FULLY OPERATIONAL** - gpt-4.1-mini via LangDB gateway - 100% operational. Production deployment January 15, 2025.
 
 ### Advanced Features
 - [x] **Hybrid Search**: Combines semantic vector search with optional LLM reranking for optimal relevance

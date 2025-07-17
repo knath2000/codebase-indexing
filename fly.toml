@@ -52,20 +52,25 @@ primary_region = "dfw"
     protocol = "http"
     tls_skip_verify = false
 
-# Auto-scaling configuration
+# Machine sizing – one always-on instance (upgrade later if needed)
 [vm]
-  # Dedicated performance plan with 2 vCPUs and 4 GB RAM (minimum required)
-  size = "performance-2x"
-  # Explicitly set resources for clarity (Fly derives these from size, but it's good to be explicit)
-  memory_mb = 4096
-  cpus = 2
-  cpu_kind = "performance"
+  size = "shared-cpu-1x"   # 1 vCPU / 1 GB RAM
 
-# Ensure single instance for session affinity (MCP SSE requirement)
-[autoscaler]
-  enabled = true
-  min_count = 1     # Keep 1 instance always running for SSE connections
-  max_count = 1     # Single instance to ensure session consistency
+# Machines-specific flags to prevent Fly from spinning up extra instances
+[http_service]
+  internal_port = 3001
+  force_https = false
+  auto_start_machines = false   # don’t start extra machines on demand
+  auto_stop_machines  = "disabled"  # keep primary machine running
+  min_machines_running = 1     # always keep exactly one machine
+  processes = ["app"]
+
+# Persistent volume for Qdrant data (20 GB)
+[[mounts]]
+  source      = "qdrant_data"
+  destination = "/data"
+  size        = "20gb"
+  processes   = ["app"]
 
 # Metrics and monitoring
 [metrics]

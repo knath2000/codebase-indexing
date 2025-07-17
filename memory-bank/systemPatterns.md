@@ -63,7 +63,7 @@ interface WorkspaceInfo {
 ## Advanced Search Capabilities
 
 ### **1. LLM-Powered Reranking**
-- **Claude-4 Opus Integration**: Superior semantic understanding vs. Cursor's built-in
+- **gpt-4.1-mini Integration**: Superior semantic understanding vs. Cursor's built-in
 - **Context-Aware Ranking**: Results ranked by relevance to query intent
 - **Implementation-Focused**: Prioritizes code over documentation by default
 - **Configurable Thresholds**: Adaptive precision/recall balance
@@ -144,7 +144,7 @@ New Directory Detected → Workspace Detection → Collection Switch → Service
 |---------|---------------|-----------------|
 | Workspace Isolation | ✅ Perfect (collection-per-workspace) | ✅ Good (per-workspace indexes) |
 | Multi-Root Support | ✅ Full VSCode `.code-workspace` | ✅ Supported |
-| LLM Reranking | ✅ Claude-4 Opus | ❌ Basic ML models |
+| LLM Reranking | ✅ gpt-4.1-mini | ❌ Basic ML models |
 | Search Performance | ✅ Hybrid + optimizations | ✅ Good |
 | Workspace Switching | ✅ Zero-restart switching | ⚠️ May require reload |
 | Cross-Workspace | ✅ Zero contamination | ✅ Isolated |

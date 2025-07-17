@@ -23,7 +23,7 @@ We have successfully implemented comprehensive multi-workspace support that **ma
 3. **Enhanced MCP Tools**
    - `get_workspace_info`: Current workspace details and metadata
    - `list_workspaces`: All detected workspaces with status
-   - `switch_workspace`: Zero-downtime workspace switching
+   - `switch_workspace`: Zero-restart workspace switching
 
 ### ✅ **Cursor Parity + Enhancements**
 
@@ -31,7 +31,7 @@ We have successfully implemented comprehensive multi-workspace support that **ma
 |---------|-------------------|-----------------|--------|
 | Workspace Isolation | ✅ Perfect (collection-per-workspace) | ✅ Good | **EXCEEDS** |
 | Multi-Root Support | ✅ Full `.code-workspace` support | ✅ Supported | **MATCHES** |
-| LLM Reranking | ✅ Claude-4 Opus powered | ❌ Basic ML models | **EXCEEDS** |
+| LLM Reranking | ✅ gpt-4.1-mini powered | ❌ Basic ML models | **EXCEEDS** |
 | Workspace Switching | ✅ Zero-restart switching | ⚠️ May require reload | **EXCEEDS** |
 | Search Performance | ✅ Hybrid + optimizations | ✅ Good | **MATCHES+** |
 | Customization | ✅ Highly configurable | ❌ Limited | **EXCEEDS** |
@@ -138,7 +138,7 @@ We have successfully implemented comprehensive multi-workspace support that **ma
 Our MCP server now provides:
 
 1. **Superior Workspace Isolation**: Perfect isolation vs. Cursor's good isolation
-2. **Enhanced LLM Reranking**: Claude-4 Opus vs. Cursor's basic ML models
+2. **Enhanced LLM Reranking**: gpt-4.1-mini vs. Cursor's basic ML models
 3. **Zero-Restart Switching**: Seamless switching vs. potential Cursor reloads
 4. **Full Customization**: Highly configurable vs. Cursor's limited options
 5. **Real-time Workspace Management**: Live workspace tools and status
