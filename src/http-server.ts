@@ -126,7 +126,7 @@ app.get('/', (req: Request, res: Response) => {
     // @ts-ignore – Express types don’t know this returns Promise<void>
     return handleSse(req, res);
   }
-  res.json({
+  return res.json({
     message: 'MCP Codebase Indexing Server',
     version: '1.0.0',
     transport: 'HTTP SSE',
