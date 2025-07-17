@@ -597,15 +597,19 @@ app.post('/message', async (req: Request, res: Response): Promise<void> => {
           break;
           
         case 'tools/call':
+          console.log('🔧 Processing tools/call request:', JSON.stringify(params, null, 2));
           if (!mcpClient) {
             throw new Error('MCP client not initialized');
           }
 
           // Ensure services are initialized before tool execution
           await ensureServicesInitialized();
+          console.log('✅ Services initialized for tool call');
 
           // Forward the tool call through the in-memory client to reuse existing handlers
+          console.log('📞 Forwarding tool call to mcpClient...');
           const toolResponse = await mcpClient.callTool(params);
+          console.log('📨 Received tool response:', JSON.stringify(toolResponse, null, 2));
           result = toolResponse;
           break;
 
