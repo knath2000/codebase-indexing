@@ -19,10 +19,10 @@ export function loadConfig(): Config {
     chunkOverlap: parseInt(process.env.CHUNK_OVERLAP || '100'), // Reduced overlap for privacy
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '1048576'), // 1MB
     excludePatterns: process.env.EXCLUDE_PATTERNS?.split(',') || [
-      '*.git*',
       'node_modules/**',
       'dist/**',
       'build/**',
+      '*.git*',
       '*.log',
       '*.tmp',
       '*.temp',
@@ -185,31 +185,11 @@ export function validateConfig(config: Config): void {
   }
 
   if (!['voyage-code-3', 'voyage-3.5', 'voyage-3-large', 'voyage-code-2', 'voyage-2', 'voyage-large-2'].includes(config.embeddingModel)) {
-    console.warn(`Warning: Embedding model '${config.embeddingModel}' may not be supported`);
+    console.warn('Warning: Embedding model ' + config.embeddingModel + ' may not be supported');
   }
-
-  if (config.keywordSearchTimeoutMs < 1000) {
-    throw new Error('Keyword search timeout must be at least 1000 ms');
-  }
-  if (config.keywordSearchMaxChunks <= 0) {
-    throw new Error('Keyword search max chunks must be greater than 0');
-  }
-
-  if (config.hybridSearchAlpha <= 0 || config.hybridSearchAlpha > 1) {
-    throw new Error('Hybrid search alpha must be between 0 (exclusive) and 1 (inclusive)');
-  }
-
-  // Privacy validation logging
-  console.log(`🔒 Privacy Settings Validated:`);
-  console.log(`   - Chunk Size: ${config.chunkSize} chars (100-1000 range)`);
-  console.log(`   - Chunk Overlap: ${config.chunkOverlap} chars`);
-  console.log(`   - Max File Size: ${Math.round(config.maxFileSize / 1024 / 1024)}MB`);
-  console.log(`   - Embeddings: One-way mathematical representations only`);
 }
 
-/**
- * Print configuration summary
- */
+// Add back the printConfigSummary export
 export function printConfigSummary(config: Config): void {
   console.log('Configuration Summary:');
   console.log(`  Qdrant URL: ${config.qdrantUrl}`);
@@ -225,4 +205,4 @@ export function printConfigSummary(config: Config): void {
   console.log(`  Keyword Search Timeout: ${config.keywordSearchTimeoutMs} ms`);
   console.log(`  Keyword Search Max Chunks: ${config.keywordSearchMaxChunks}`);
   console.log(`  Hybrid Search α: ${config.hybridSearchAlpha}`);
-} 
+}

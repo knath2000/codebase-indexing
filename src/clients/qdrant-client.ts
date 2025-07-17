@@ -172,76 +172,57 @@ export class QdrantVectorClient {
    */
   async storeEmbeddings(embeddings: EmbeddingVector[]): Promise<void> {
     console.log(`🚀 [Qdrant] Starting to store ${embeddings.length} embeddings`);
-    
+
+    // Early-exit
+    if (embeddings.length === 0) {
+      console.log('ℹ️  [Qdrant] No embeddings to store – skipping');
+      return;
+    }
+
+    // Verify connection once
+    console.log('🔗 [Qdrant] Verifying connection...');
+    if (!(await this.testConnection())) {
+      throw new Error('Qdrant connection test failed');
+    }
+
+    const batchSize = 256; // Safer batch size to avoid large payloads/timeouts
+
+    // Helper to transform EmbeddingVector → Qdrant point format
+    const toPoint = (emb: EmbeddingVector) => ({
+      id: emb.id,
+      vector: emb.vector,
+      payload: emb.payload as Record<string, unknown>
+    });
+
     try {
-      // Test connection first
-      console.log(`🔗 [Qdrant] Testing connection before storage...`);
-      const isConnected = await this.testConnection();
-      if (!isConnected) {
-        throw new Error('Qdrant connection test failed');
-      }
-      console.log(`✅ [Qdrant] Connection test successful`);
+      let stored = 0;
+      for (let i = 0; i < embeddings.length; i += batchSize) {
+        const batch = embeddings.slice(i, i + batchSize).map(toPoint);
 
-      // Log collection info
-      console.log(`📊 [Qdrant] Getting collection info...`);
-      const collectionInfo = await this.getCollectionInfo();
-      console.log(`📊 [Qdrant] Collection info:`, {
-        name: collectionInfo.config?.params?.vectors?.size || 'unknown',
-        points: collectionInfo.points_count || 0,
-        status: collectionInfo.status || 'unknown'
-      });
-
-      // Prepare points data
-      console.log(`🔄 [Qdrant] Preparing ${embeddings.length} points for upsert...`);
-      const points = embeddings.map((embedding, index) => {
-        if (index === 0) {
-          // Log first embedding structure for debugging
-          console.log(`📝 [Qdrant] First embedding structure:`, {
-            id: embedding.id,
-            vectorLength: embedding.vector?.length || 0,
-            payloadKeys: Object.keys(embedding.payload || {}),
-            payloadPreview: {
-              filePath: embedding.payload?.filePath || 'missing',
-              chunkType: embedding.payload?.chunkType || 'missing',
-              startLine: embedding.payload?.startLine || 'missing'
-            }
-          });
+        // Defensive: ensure vectors present & correct dimension
+        for (const p of batch) {
+          if (!p.vector || p.vector.length !== this.embeddingDimension) {
+            throw new Error(`Vector dimension mismatch for id=${p.id}`);
+          }
         }
-        
-        return {
-          id: embedding.id,
-          vector: embedding.vector,
-          payload: embedding.payload as Record<string, unknown>
-        };
-      });
 
-      console.log(`💾 [Qdrant] Calling upsert with wait=false...`);
-      const startTime = Date.now();
-      
-      // Change wait to false to avoid timeouts, and add timeout handling
-      const upsertPromise = this.client.upsert(this.collectionName, {
-        wait: false,  // Don't wait for indexing to complete
-        points
-      });
+        const start = Date.now();
+        await this.client.upsert(this.collectionName, {
+          wait: false,
+          points: batch
+        });
+        const dur = Date.now() - start;
+        stored += batch.length;
+        console.log(`✅ [Qdrant] Upserted batch (${batch.length}) – total stored so far: ${stored}/${embeddings.length} in ${dur}ms`);
+      }
 
-      // Add manual timeout
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Upsert operation timed out after 30 seconds')), 30000);
-      });
+      // Final verification (may lag slightly because wait=false)
+      const finalInfo = await this.getCollectionInfo();
+      console.log(`📊 [Qdrant] Collection now reports ${finalInfo.points_count || 0} points`);
 
-      await Promise.race([upsertPromise, timeoutPromise]);
-      
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Qdrant] Upsert completed successfully in ${duration}ms`);
-      
-      // Verify points were stored
-      console.log(`🔍 [Qdrant] Verifying storage...`);
-      const updatedInfo = await this.getCollectionInfo();
-      console.log(`📊 [Qdrant] Updated collection points count: ${updatedInfo.points_count || 0}`);
-      
-    } catch (error) {
-      console.error(`❌ [Qdrant] Storage failed:`, error);
-      throw new Error(`Failed to store embeddings: ${error}`);
+    } catch (err) {
+      console.error('❌ [Qdrant] storeEmbeddings failed:', err);
+      throw err;
     }
   }
 

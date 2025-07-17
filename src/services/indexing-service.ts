@@ -346,10 +346,13 @@ export class IndexingService extends EventEmitter {
       ignore: this.config.excludePatterns
     });
 
-    console.log(`🔍 Found ${allFiles.length} files after exclude pattern filtering`);
+    console.log(`Found ${allFiles.length} files after exclude pattern filtering`);
+
+    // Hardcoded filter to exclude node_modules paths
+    const filteredFiles = allFiles.filter(file => !file.includes('node_modules'));
 
     // Filter by supported extensions
-    const supportedFiles = allFiles.filter(file => {
+    const supportedFiles = filteredFiles.filter(file => {
       const ext = file.split('.').pop()?.toLowerCase();
       return ext && this.config.supportedExtensions.includes(`.${ext}`);
     });

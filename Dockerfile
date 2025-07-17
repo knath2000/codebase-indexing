@@ -8,10 +8,14 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     python3 \
+    build-essential \
     make \
     g++ \
     git \
  && rm -rf /var/lib/apt/lists/*
+
+# Set C++ flags to enable exceptions for native module compilation
+ENV CXXFLAGS="-fexceptions"
 
 # Copy package files
 COPY package*.json ./

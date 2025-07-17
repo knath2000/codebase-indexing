@@ -152,9 +152,12 @@ export class CodeParser {
   async parseFile(filePath: string): Promise<CodeChunk[]> {
     const content = readFileSync(filePath, 'utf-8');
     const language = this.getLanguageFromFile(filePath);
+    console.log(`[DEBUG] Parsing file: ${filePath} (language: ${language})`);
     
     if (!language) {
-      return this.parseGenericFile(filePath, content);
+      const genericChunks = this.parseGenericFile(filePath, content);
+      console.log(`[DEBUG] [${filePath}] No language detected. Generic chunk count: ${genericChunks.length}`);
+      return genericChunks;
     }
 
     try {
@@ -166,22 +169,19 @@ export class CodeParser {
       
       const tree = this.parser.parse(content);
       const chunks = this.extractChunks(tree.rootNode, content, filePath, language);
-      
+      console.log(`[DEBUG] [${filePath}] Chunks extracted with language parser: ${chunks.length}`);
       if (chunks.length === 0) {
         // Fallback: generic chunking to ensure every file is represented
         const genericChunks = this.parseGenericContent(content, filePath);
+        console.log(`[DEBUG] [${filePath}] Fallback to generic chunking. Generic chunk count: ${genericChunks.length}`);
         chunks.push(...genericChunks);
       }
-      
       return chunks;
     } catch (error) {
-      console.warn(`Failed to parse ${filePath} with ${language} parser, falling back to generic:`, error);
-      console.warn(`Error details:`, {
-        name: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      return this.parseGenericFile(filePath, content);
+      console.warn(`[DEBUG] [${filePath}] Failed to parse with ${language} parser, falling back to generic:`, error);
+      const genericChunks = this.parseGenericFile(filePath, content);
+      console.log(`[DEBUG] [${filePath}] Exception fallback. Generic chunk count: ${genericChunks.length}`);
+      return genericChunks;
     }
   }
 
