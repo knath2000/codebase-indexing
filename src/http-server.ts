@@ -164,15 +164,21 @@ const activeSessions = new Map<string, {
 async function initializeMcpServer() {
   if (mcpServer && mcpClient) return;
 
+  console.log('diag: 1. Starting initialization');
   const config = loadConfig();
+  console.log('diag: 2. Config loaded');
   validateConfig(config);
+  console.log('diag: 3. Config validated');
 
   // Create shared workspace manager
   workspaceManager = new WorkspaceManager();
+  console.log('diag: 4. WorkspaceManager created');
 
   // Create services but don't initialize them yet (with shared workspace manager)
   indexingService = new IndexingService(config, workspaceManager);
+  console.log('diag: 5. IndexingService created');
   searchService = new SearchService(config, workspaceManager);
+  console.log('diag: 6. SearchService created');
 
   // Create MCP server
   mcpServer = new Server(
@@ -186,15 +192,19 @@ async function initializeMcpServer() {
       },
     }
   );
+  console.log('diag: 7. MCP Server object created');
 
   // Setup MCP tools (register handlers on the server)
   setupMcpTools(mcpServer, indexingService, searchService);
+  console.log('diag: 8. MCP tools setup');
 
   // Wire up an in-memory transport so we can invoke tool handlers locally via a client instance.
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  console.log('diag: 9. In-memory transport created');
 
   // Connect server side of the transport
   await mcpServer.connect(serverTransport);
+  console.log('diag: 10. MCP Server connected to transport');
 
   // Create an internal client with minimal capabilities (just tools)
   mcpClient = new Client(
@@ -208,8 +218,10 @@ async function initializeMcpServer() {
       },
     }
   );
+  console.log('diag: 11. MCP Client object created');
 
   await mcpClient.connect(clientTransport);
+  console.log('diag: 12. MCP Client connected to transport');
 
   console.log('MCP server and internal client initialized (in-memory transport)');
 }
@@ -620,8 +632,7 @@ async function startServer() {
     printConfigSummary(config);
     
     // Initialize MCP server at startup
-    console.log('🚧 SKIPPING MCP INITIALIZATION FOR DIAGNOSTICS 🚧');
-    // await initializeMcpServer();
+    await initializeMcpServer();
     
     app.listen(port, '0.0.0.0', () => {
       console.log(`🚀 MCP Codebase Indexing Server running on port ${port}`);
