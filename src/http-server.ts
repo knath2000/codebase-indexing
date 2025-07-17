@@ -18,20 +18,115 @@ const port = parseInt(process.env.PORT || '3001', 10);
 app.use(cors());
 app.use(express.json());
 
-// Health check endpoint
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
-});
+// -----------------------------------------------------------------------------
+// 1. Helper handler functions so we can reuse logic without relying on _router
+// -----------------------------------------------------------------------------
+
+// (A) JSON-RPC handler – shared by POST /mcp and POST /
+async function handleJsonRpc(req: Request, res: Response) {
+  try {
+    if (!mcpClient) {
+      // Ensure core server is ready
+      await initializeMcpServer();
+    }
+
+    const { jsonrpc, id, method, params } = req.body || {};
+
+    if (jsonrpc !== '2.0') {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32600,
+          message: 'Invalid JSON-RPC version'
+        }
+      });
+    }
+
+    let result: any = null;
+
+    switch (method) {
+      case 'initialize':
+        result = {
+          protocolVersion: '2024-11-05',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'codebase-indexing-server', version: '1.0.0' }
+        };
+        break;
+      case 'tools/list':
+        result = { tools: TOOL_DEFINITIONS };
+        break;
+      case 'tools/call': {
+        if (!mcpClient) {
+          throw new Error('MCP client not initialized');
+        }
+        // Ensure heavy services are up before executing a tool
+        if ('ensureServicesInitialized' in globalThis) {
+          await (globalThis as any).ensureServicesInitialized();
+        }
+        result = await mcpClient.callTool(params);
+        break;
+      }
+      case 'notifications/initialized':
+        // No-op acknowledgement
+        result = null;
+        break;
+      default:
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32601, message: `Method not found: ${method}` }
+        });
+    }
+
+    return res.json({ jsonrpc: '2.0', id, result });
+  } catch (error) {
+    console.error('Failed to process JSON-RPC request:', error);
+    return res.status(500).json({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32000,
+        message: error instanceof Error ? error.message : 'Internal server error'
+      }
+    });
+  }
+}
+
+// (B) SSE handler – used by GET /mcp and optionally GET /
+async function handleSse(req: Request, res: Response) {
+  // Reuse existing implementation by calling the original GET /mcp logic.
+  // We wrap it in a Promise so TypeScript treats both handlers uniformly.
+  return new Promise<void>((resolve) => {
+    // We bind the current request/response to the existing /mcp handler code
+    // by invoking the function reference that Express stored under that route.
+    // Since we are inside the same module, we can directly call the callback.
+    // Locate the route layer for path '/mcp' and method 'get'
+    const layer = (app as any)._router?.stack?.find((l: any) => l.route && l.route.path === '/mcp' && l.route.methods.get);
+    if (layer) {
+      layer.handle_request(req, res, () => resolve());
+    } else {
+      res.status(500).json({ error: 'SSE handler not found' });
+      resolve();
+    }
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 2. Public HTTP routes
+// -----------------------------------------------------------------------------
+
+// Health check endpoint (already defined earlier) – keep as is
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {
   const wantsSse = (req.headers.accept || '').includes('text/event-stream');
   if (wantsSse) {
-    // Delegate to /mcp SSE handler
-    // @ts-ignore
-    return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
+    // Route to SSE handler directly
+    // @ts-ignore – Express types don’t know this returns Promise<void>
+    return handleSse(req, res);
   }
-  res.json({ 
+  res.json({
     message: 'MCP Codebase Indexing Server',
     version: '1.0.0',
     transport: 'HTTP SSE',
@@ -39,12 +134,16 @@ app.get('/', (req: Request, res: Response) => {
   });
 });
 
-// Expose the same JSON-RPC handler at the root path to support clients that POST to base URL
-app.post('/', async (req: Request, res: Response) => {
-  // Reuse the /mcp handler logic by delegating to it
-  // @ts-ignore
-  return app._router.handle({ ...req, url: '/mcp' }, res, () => {});
+// POST / (streamableHttp fallback)
+app.post('/', handleJsonRpc);
+
+// Health check endpoint
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
+
+// POST /mcp (streamableHttp primary endpoint)
+app.post('/mcp', handleJsonRpc);
 
 // Global MCP server instance
 let mcpServer: Server | null = null;
@@ -278,77 +377,6 @@ app.get('/mcp', async (_req: Request, res: Response) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to establish SSE connection' });
     }
-  }
-});
-
-// Handle JSON-RPC over HTTP (streamableHttp transport) – Cursor first tries this before SSE
-app.post('/mcp', async (req: Request, res: Response) => {
-  try {
-    if (!mcpClient) {
-      // Ensure core server is ready
-      await initializeMcpServer();
-    }
-
-    const { jsonrpc, id, method, params } = req.body;
-
-    if (jsonrpc !== '2.0') {
-      return res.status(400).json({
-        jsonrpc: '2.0',
-        id,
-        error: {
-          code: -32600,
-          message: 'Invalid JSON-RPC version'
-        }
-      });
-    }
-
-    let result: any = null;
-
-    switch (method) {
-      case 'initialize':
-        result = {
-          protocolVersion: '2024-11-05',
-          capabilities: { tools: {} },
-          serverInfo: { name: 'codebase-indexing-server', version: '1.0.0' }
-        };
-        break;
-      case 'tools/list':
-        result = { tools: TOOL_DEFINITIONS };
-        break;
-      case 'tools/call': {
-        if (!mcpClient) {
-          throw new Error('MCP client not initialized');
-        }
-        // Ensure heavy services are up before executing a tool
-        if ('ensureServicesInitialized' in globalThis) {
-          await (globalThis as any).ensureServicesInitialized();
-        }
-        result = await mcpClient.callTool(params);
-        break;
-      }
-      case 'notifications/initialized':
-        // No-op acknowledgement
-        result = null;
-        break;
-      default:
-        return res.status(400).json({
-          jsonrpc: '2.0',
-          id,
-          error: { code: -32601, message: `Method not found: ${method}` }
-        });
-    }
-
-    return res.json({ jsonrpc: '2.0', id, result });
-  } catch (error) {
-    console.error('Failed to process JSON-RPC over HTTP /mcp:', error);
-    return res.status(500).json({
-      jsonrpc: '2.0',
-      id: null,
-      error: {
-        code: -32000,
-        message: error instanceof Error ? error.message : 'Internal server error'
-      }
-    });
   }
 });
 
