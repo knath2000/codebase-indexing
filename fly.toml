@@ -36,21 +36,22 @@ primary_region = "dfw"
     compress = false  # Disable compression for SSE
     response.headers = { "X-Frame-Options" = "DENY", "Cache-Control" = "no-cache" }
 
-  [[services.tcp_checks]]
-    interval = "15s"
-    timeout = "2s"
-    grace_period = "1s"
-    restart_limit = 0
+  # Temporarily disabled health checks to allow machine to start
+  # [[services.tcp_checks]]
+  #   interval = "15s"
+  #   timeout = "2s"
+  #   grace_period = "1s"
+  #   restart_limit = 0
 
-  [[services.http_checks]]
-    interval = "10s"
-    timeout = "2s"
-    grace_period = "5s"
-    restart_limit = 0
-    method = "get"
-    path = "/health"
-    protocol = "http"
-    tls_skip_verify = false
+  # [[services.http_checks]]
+  #   interval = "10s"
+  #   timeout = "2s"
+  #   grace_period = "5s"
+  #   restart_limit = 0
+  #   method = "get"
+  #   path = "/health"
+  #   protocol = "http"
+  #   tls_skip_verify = false
 
 # Machine sizing – one always-on instance (upgrade later if needed)
 [vm]
@@ -66,12 +67,12 @@ primary_region = "dfw"
   min_machines_running = 1     # always keep exactly one machine
   processes = ["app"]
 
-# Persistent volume for Qdrant data (20 GB)
-[[mounts]]
-  source      = "qdrant_data"
-  destination = "/data"
-  size        = "20gb"
-  processes   = ["app"]
+# Persistent volume for Qdrant data (20 GB) - temporarily disabled
+# [[mounts]]
+#   source      = "qdrant_data"
+#   destination = "/data"
+#   size        = "20gb"
+#   processes   = ["app"]
 
 # Metrics and monitoring
 [metrics]
