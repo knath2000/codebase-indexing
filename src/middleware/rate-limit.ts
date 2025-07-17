@@ -33,5 +33,5 @@ export function rateLimit(req: Request, res: Response, next: NextFunction) {
     return res.status(429).send('Rate limit exceeded')
   }
   bucket.tokens -= 1
-  next()
+  return next()
 } 

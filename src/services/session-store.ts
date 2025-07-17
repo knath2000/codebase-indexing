@@ -1,12 +1,5 @@
 import Database from 'better-sqlite3'
 
-interface SessionRecord {
-  sessionId: string
-  allocId: string
-  createdAt: number // epoch ms
-  expiresAt: number // epoch ms
-}
-
 const DEFAULT_TTL_MS = 10 * 60 * 1000 // 10 minutes
 
 export class SessionStore {
