@@ -435,8 +435,10 @@ app.get('/message', (req: Request, res: Response) => {
       method: 'notifications/initialized',
       params: null
     };
+    // Explicitly use `event: message` which is a common requirement for SSE-based RPC
+    res.write('event: message\n');
     res.write(`data: ${JSON.stringify(initNotification)}\n\n`);
-    console.log('📨 Sent notifications/initialized JSON-RPC via SSE');
+    console.log('📨 Sent notifications/initialized JSON-RPC via SSE using event: message');
 
     // 5. Keep-alive comment ping every 30 s
     const keepAliveInterval = setInterval(() => {
