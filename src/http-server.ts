@@ -271,6 +271,77 @@ app.get('/mcp', async (_req: Request, res: Response) => {
   }
 });
 
+// Handle JSON-RPC over HTTP (streamableHttp transport) – Cursor first tries this before SSE
+app.post('/mcp', async (req: Request, res: Response) => {
+  try {
+    if (!mcpClient) {
+      // Ensure core server is ready
+      await initializeMcpServer();
+    }
+
+    const { jsonrpc, id, method, params } = req.body;
+
+    if (jsonrpc !== '2.0') {
+      return res.status(400).json({
+        jsonrpc: '2.0',
+        id,
+        error: {
+          code: -32600,
+          message: 'Invalid JSON-RPC version'
+        }
+      });
+    }
+
+    let result: any = null;
+
+    switch (method) {
+      case 'initialize':
+        result = {
+          protocolVersion: '2024-11-05',
+          capabilities: { tools: {} },
+          serverInfo: { name: 'codebase-indexing-server', version: '1.0.0' }
+        };
+        break;
+      case 'tools/list':
+        result = { tools: TOOL_DEFINITIONS };
+        break;
+      case 'tools/call': {
+        if (!mcpClient) {
+          throw new Error('MCP client not initialized');
+        }
+        // Ensure heavy services are up before executing a tool
+        if ('ensureServicesInitialized' in globalThis) {
+          await (globalThis as any).ensureServicesInitialized();
+        }
+        result = await mcpClient.callTool(params);
+        break;
+      }
+      case 'notifications/initialized':
+        // No-op acknowledgement
+        result = null;
+        break;
+      default:
+        return res.status(400).json({
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32601, message: `Method not found: ${method}` }
+        });
+    }
+
+    return res.json({ jsonrpc: '2.0', id, result });
+  } catch (error) {
+    console.error('Failed to process JSON-RPC over HTTP /mcp:', error);
+    return res.status(500).json({
+      jsonrpc: '2.0',
+      id: null,
+      error: {
+        code: -32000,
+        message: error instanceof Error ? error.message : 'Internal server error'
+      }
+    });
+  }
+});
+
 // Handle POST requests for JSON-RPC messages (client-to-server)
 app.post('/message', async (req: Request, res: Response): Promise<void> => {
   try {
