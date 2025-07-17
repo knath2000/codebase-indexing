@@ -11,6 +11,16 @@ import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
 import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
 
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 UNHANDLED REJECTION 🚨');
+  console.error('An unhandled promise rejection occurred:');
+  console.error('Reason:', reason);
+  console.error('Promise:', promise);
+  // Forcing a crash with a clear stack trace in a containerized environment
+  // is often better than a silent exit.
+  throw reason;
+});
+
 const app = express();
 const port = parseInt(process.env.PORT || '3001', 10);
 
@@ -610,13 +620,19 @@ async function startServer() {
     printConfigSummary(config);
     
     // Initialize MCP server at startup
-    await initializeMcpServer();
+    console.log('🚧 SKIPPING MCP INITIALIZATION FOR DIAGNOSTICS 🚧');
+    // await initializeMcpServer();
     
     app.listen(port, '0.0.0.0', () => {
       console.log(`🚀 MCP Codebase Indexing Server running on port ${port}`);
       console.log(`📡 MCP endpoint: http://localhost:${port}/mcp`);
       console.log(`💚 Health check: http://localhost:${port}/health`);
     });
+
+    // Add a keepalive log to diagnose premature exit
+    setInterval(() => {
+      console.log('❤️ Server process is still alive...');
+    }, 2000);
     
   } catch (error) {
     console.error('Failed to start server:', error);
