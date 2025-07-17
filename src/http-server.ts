@@ -429,10 +429,14 @@ app.get('/message', (req: Request, res: Response) => {
 
     console.log(`✅ /message SSE connected for session ${sessionId}`);
 
-    // 4. Send the REQUIRED initialized event so Cursor knows we are ready
-    res.write('event: initialized\n');
-    res.write('data: {}\n\n');
-    console.log('📨 Sent initialized event');
+    // 4. Send the REQUIRED JSON-RPC notification so Cursor knows we are ready
+    const initNotification = {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+      params: null
+    };
+    res.write(`data: ${JSON.stringify(initNotification)}\n\n`);
+    console.log('📨 Sent notifications/initialized JSON-RPC via SSE');
 
     // 5. Keep-alive comment ping every 30 s
     const keepAliveInterval = setInterval(() => {
