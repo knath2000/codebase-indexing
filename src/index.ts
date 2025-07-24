@@ -9,6 +9,7 @@ import { SearchService } from './services/search-service.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
+import { createLogger } from './utils/logger.js';
 
 // Server configuration
 const SERVER_NAME = 'codebase-indexing-server';
@@ -840,8 +841,12 @@ class CodebaseIndexingServer {
   private workspaceWatcher: WorkspaceWatcher;
   private workspaceManager: WorkspaceManager;
   private workspaceDir: string;
+  private logger: any;
 
   constructor(config: Config) {
+    // Initialize logger with configuration
+    this.logger = createLogger(config);
+    
     this.server = new Server({
       name: SERVER_NAME,
       version: SERVER_VERSION,

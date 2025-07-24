@@ -1,6 +1,7 @@
 import { HealthStatus, ServiceHealth, Config } from '../types.js';
 import { VoyageClient } from '../clients/voyage-client.js';
 import { QdrantVectorClient } from '../clients/qdrant-client.js';
+import type { RateLimiter } from '../middleware/rate-limit.js';
 
 export class HealthMonitorService {
   private config: Config;
@@ -9,6 +10,7 @@ export class HealthMonitorService {
   private qdrantClient: QdrantVectorClient;
   private lastHealthCheck: Date;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private rateLimiter?: RateLimiter;
 
   constructor(config: Config, voyageClient: VoyageClient, qdrantClient: QdrantVectorClient) {
     this.config = config;
@@ -157,13 +159,26 @@ export class HealthMonitorService {
   }
 
   /**
-   * Get system metrics
+   * Set rate limiter instance for metrics collection
+   */
+  public setRateLimiter(rateLimiter: RateLimiter): void {
+    this.rateLimiter = rateLimiter;
+  }
+
+  /**
+   * Get system metrics including rate limiting metrics
    */
   private async getSystemMetrics(): Promise<{
     uptime: number;
     memoryUsage: number;
     cpuUsage?: number;
     diskUsage?: number;
+    rateLimit?: {
+      totalRequests: number;
+      rejectedRequests: number;
+      activeBuckets: number;
+      rejectionRate: number;
+    };
   }> {
     const uptime = Date.now() - this.startTime.getTime();
     
@@ -171,11 +186,24 @@ export class HealthMonitorService {
     const memoryUsage = process.memoryUsage();
     const memoryUsageMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
 
-    return {
+    const metrics: any = {
       uptime: Math.round(uptime / 1000), // Convert to seconds
       memoryUsage: memoryUsageMB
       // CPU and disk usage would require additional libraries
     };
+
+    // Add rate limiting metrics if available
+    if (this.rateLimiter) {
+      const rateLimitMetrics = this.rateLimiter.getMetrics();
+      metrics.rateLimit = {
+        ...rateLimitMetrics,
+        rejectionRate: rateLimitMetrics.totalRequests > 0 
+          ? Math.round((rateLimitMetrics.rejectedRequests / rateLimitMetrics.totalRequests) * 100) / 100
+          : 0
+      };
+    }
+
+    return metrics;
   }
 
   /**

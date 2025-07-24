@@ -10,6 +10,8 @@ import { SearchService } from './services/search-service.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
 import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
+import { buildRateLimiter } from './middleware/rate-limit.js';
+import { createLogger } from './utils/logger.js';
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('🚨 UNHANDLED REJECTION 🚨');
@@ -24,9 +26,8 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 const port = parseInt(process.env.PORT || '3001', 10);
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Initialize configuration-dependent middleware after config is loaded
+// This will be properly set up in the main section where config is available
 
 // -----------------------------------------------------------------------------
 // 1. Helper handler functions so we can reuse logic without relying on _router
@@ -706,6 +707,39 @@ async function startServer() {
     const config = loadConfig();
     validateConfig(config);
     printConfigSummary(config);
+    
+    // Initialize logger with configuration
+    const logger = createLogger(config);
+    
+    // Set up middleware with configuration
+    app.use(cors());
+    app.use(express.json());
+    
+    // Add rate limiting middleware
+    app.use(buildRateLimiter(config));
+    
+    // Add request logging middleware
+    app.use((req, res, next) => {
+      const start = Date.now();
+      const originalEnd = res.end;
+      
+      res.end = function(...args: any[]) {
+        const duration = Date.now() - start;
+        logger.info({
+          method: req.method,
+          url: req.url,
+          statusCode: res.statusCode,
+          duration,
+          userAgent: req.get('User-Agent'),
+          workspace: req.get('X-Workspace'),
+          contentLength: res.get('Content-Length')
+        }, `${req.method} ${req.url} ${res.statusCode} ${duration}ms`);
+        
+        originalEnd.apply(this, args);
+      };
+      
+      next();
+    });
     
     // Initialize MCP server at startup
     await initializeMcpServer();

@@ -48,7 +48,17 @@ export const ConfigSchema = z.object({
   maxContextChunks: z.number().default(20),
   hybridSearchAlpha: z.number().default(0.7), // weight for dense vs sparse
   fileWatchDebounceMs: z.number().default(1000),
-  mcpSchemaVersion: z.string().default('2024-11-05')
+  mcpSchemaVersion: z.string().default('2024-11-05'),
+  // Logging configuration
+  logLevel: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  logPretty: z.boolean().default(false),
+  logRequestIds: z.boolean().default(true),
+  // Rate limiting configuration  
+  rateLimitEnabled: z.boolean().default(true),
+  rateLimitTokens: z.number().default(30),
+  rateLimitWindowMs: z.number().default(60000), // 1 minute
+  rateLimitMemoryTTLMs: z.number().default(300000), // 5 minutes bucket cleanup
+  rateLimitUseSessionId: z.boolean().default(true) // Use session_id instead of X-Workspace header
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

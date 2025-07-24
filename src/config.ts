@@ -127,6 +127,18 @@ export function loadConfig(): Config {
     enableLLMReranking: process.env.ENABLE_LLM_RERANKING ? process.env.ENABLE_LLM_RERANKING !== 'false' : true,
     llmRerankerApiKey: process.env.LLM_RERANKER_API_KEY,
     llmRerankerModel: process.env.LLM_RERANKER_MODEL || 'anthropic/claude-3-haiku-20240307',
+    fileWatchDebounceMs: parseInt(process.env.FILE_WATCH_DEBOUNCE_MS || '1000'),
+    mcpSchemaVersion: process.env.MCP_SCHEMA_VERSION || '2024-11-05',
+    // Logging configuration
+    logLevel: (process.env.LOG_LEVEL || 'info') as 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
+    logPretty: process.env.LOG_PRETTY === 'true',
+    logRequestIds: process.env.LOG_REQUEST_IDS !== 'false',
+    // Rate limiting configuration
+    rateLimitEnabled: process.env.RATE_LIMIT_ENABLED !== 'false',
+    rateLimitTokens: parseInt(process.env.RATE_LIMIT_TOKENS || '30'),
+    rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'),
+    rateLimitMemoryTTLMs: parseInt(process.env.RATE_LIMIT_MEMORY_TTL_MS || '300000'),
+    rateLimitUseSessionId: process.env.RATE_LIMIT_USE_SESSION_ID !== 'false'
   };
 
   // Validate configuration
