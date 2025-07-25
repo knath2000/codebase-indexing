@@ -63,7 +63,14 @@ export const ConfigSchema = z.object({
   watcherEnabled: z.boolean().default(true),
   watcherDebounceMs: z.number().default(300), // Debounce file changes
   watcherQueueConcurrency: z.number().default(1), // Serial processing
-  watcherAutoRestart: z.boolean().default(true) // Auto-restart on errors
+  watcherAutoRestart: z.boolean().default(true), // Auto-restart on errors
+  // Session store configuration
+  sessionStoreEnabled: z.boolean().default(true),
+  sessionStorePath: z.string().default('/data/session-store.sqlite'),
+  sessionStoreTTLMs: z.number().default(600000), // 10 minutes
+  sessionStoreCleanupIntervalMs: z.number().default(60000), // 1 minute
+  sessionStoreRetryCount: z.number().default(3),
+  sessionStoreRetryDelayMs: z.number().default(100)
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

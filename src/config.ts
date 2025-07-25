@@ -143,7 +143,14 @@ export function loadConfig(): Config {
     watcherEnabled: process.env.WATCHER_ENABLED !== 'false',
     watcherDebounceMs: parseInt(process.env.WATCHER_DEBOUNCE_MS || '300'),
     watcherQueueConcurrency: parseInt(process.env.WATCHER_QUEUE_CONCURRENCY || '1'),
-    watcherAutoRestart: process.env.WATCHER_AUTO_RESTART !== 'false'
+    watcherAutoRestart: process.env.WATCHER_AUTO_RESTART !== 'false',
+    // Session store configuration
+    sessionStoreEnabled: process.env.SESSION_STORE_ENABLED !== 'false',
+    sessionStorePath: process.env.SESSION_STORE_PATH || '/data/session-store.sqlite',
+    sessionStoreTTLMs: parseInt(process.env.SESSION_STORE_TTL_MS || '600000'),
+    sessionStoreCleanupIntervalMs: parseInt(process.env.SESSION_STORE_CLEANUP_INTERVAL_MS || '60000'),
+    sessionStoreRetryCount: parseInt(process.env.SESSION_STORE_RETRY_COUNT || '3'),
+    sessionStoreRetryDelayMs: parseInt(process.env.SESSION_STORE_RETRY_DELAY_MS || '100')
   };
 
   // Validate configuration
