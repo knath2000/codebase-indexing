@@ -6,6 +6,7 @@ import { VoyageClient } from '../clients/voyage-client.js';
 import { QdrantVectorClient } from '../clients/qdrant-client.js';
 import { CodeParser } from '../parsers/code-parser.js';
 import { WorkspaceManager, WorkspaceInfo } from './workspace-manager.js';
+import { IIndexer } from '../interfaces/indexer.js';
 import {
   Config,
   CodeChunk,
@@ -17,7 +18,7 @@ import {
   IndexStats
 } from '../types.js';
 
-export class IndexingService extends EventEmitter {
+export class IndexingService extends EventEmitter implements IIndexer {
   private voyageClient: VoyageClient;
   private qdrantClient: QdrantVectorClient;
   private codeParser: CodeParser;
@@ -189,9 +190,12 @@ export class IndexingService extends EventEmitter {
   }
 
   /**
-   * Index a single file
+   * Index a single file and return chunks (legacy method)
    */
-  async indexFile(filePath: string): Promise<CodeChunk[]> {
+  async indexFile(filePath: string): Promise<void>;
+  async indexFile(filePath: string, returnChunks?: false): Promise<void>;
+  async indexFile(filePath: string, returnChunks: true): Promise<CodeChunk[]>;
+  async indexFile(filePath: string, returnChunks: boolean = false): Promise<CodeChunk[] | void> {
     const absolutePath = resolve(filePath);
     
     try {
@@ -245,7 +249,7 @@ export class IndexingService extends EventEmitter {
       // Generate embeddings and store
       await this.embedAndStore(chunks);
 
-      return chunks;
+      return returnChunks ? chunks : undefined;
     } catch (error) {
       const indexingError: IndexingError = {
         filePath,
@@ -258,14 +262,17 @@ export class IndexingService extends EventEmitter {
       this.emit('progress', this.progress);
       
       console.error(`Error indexing file ${filePath}:`, error);
-      return [];
+      return returnChunks ? [] : undefined;
     }
   }
 
   /**
    * Re-index a file (force update)
    */
-  async reindexFile(filePath: string): Promise<CodeChunk[]> {
+  async reindexFile(filePath: string): Promise<void>;
+  async reindexFile(filePath: string, returnChunks?: false): Promise<void>;
+  async reindexFile(filePath: string, returnChunks: true): Promise<CodeChunk[]>;
+  async reindexFile(filePath: string, returnChunks: boolean = false): Promise<CodeChunk[] | void> {
     const absolutePath = resolve(filePath);
     
     try {
@@ -273,7 +280,8 @@ export class IndexingService extends EventEmitter {
       await this.qdrantClient.deleteByFilePath(absolutePath);
       
       // Index the file
-      return await this.indexFile(filePath);
+      const result = await this.indexFile(filePath, true);
+      return returnChunks ? result : undefined;
     } catch (error) {
       console.error(`Error re-indexing file ${filePath}:`, error);
       throw error;

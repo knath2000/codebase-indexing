@@ -862,11 +862,10 @@ class CodebaseIndexingServer {
     this.indexingService = new IndexingService(config, this.workspaceManager);
     this.searchService = new SearchService(config, this.workspaceManager);
     this.workspaceDir = process.cwd();
-    this.workspaceWatcher = new WorkspaceWatcher(
-      this.workspaceDir,
+    this.workspaceWatcher = WorkspaceWatcher.fromConfig(
+      config,
       this.indexingService,
-      config.supportedExtensions,
-      config.excludePatterns
+      this.workspaceDir
     );
 
     this.setupToolHandlers();
@@ -1384,8 +1383,8 @@ class CodebaseIndexingServer {
     await this.ensureWorkspaceIndexed();
     
     // Start watching workspace for real-time updates
-    console.log('👁️  Starting workspace file watcher for real-time updates...');
-    this.workspaceWatcher.start();
+    console.log('Starting workspace file watcher for real-time updates...');
+    await this.workspaceWatcher.start();
     
     // Connect to stdio transport
     const transport = new StdioServerTransport();

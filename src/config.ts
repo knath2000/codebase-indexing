@@ -138,7 +138,12 @@ export function loadConfig(): Config {
     rateLimitTokens: parseInt(process.env.RATE_LIMIT_TOKENS || '30'),
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000'),
     rateLimitMemoryTTLMs: parseInt(process.env.RATE_LIMIT_MEMORY_TTL_MS || '300000'),
-    rateLimitUseSessionId: process.env.RATE_LIMIT_USE_SESSION_ID !== 'false'
+    rateLimitUseSessionId: process.env.RATE_LIMIT_USE_SESSION_ID !== 'false',
+    // File watcher configuration
+    watcherEnabled: process.env.WATCHER_ENABLED !== 'false',
+    watcherDebounceMs: parseInt(process.env.WATCHER_DEBOUNCE_MS || '300'),
+    watcherQueueConcurrency: parseInt(process.env.WATCHER_QUEUE_CONCURRENCY || '1'),
+    watcherAutoRestart: process.env.WATCHER_AUTO_RESTART !== 'false'
   };
 
   // Validate configuration

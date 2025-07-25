@@ -240,7 +240,7 @@ async function ensureServicesInitialized(): Promise<void> {
     
     // Setup workspace auto-indexing and file watching
     await ensureWorkspaceIndexed();
-    setupWorkspaceWatcher();
+    await setupWorkspaceWatcher();
     
     servicesInitialized = true;
     console.log('✅ Services initialized successfully');
@@ -288,22 +288,21 @@ async function ensureWorkspaceIndexed(): Promise<void> {
 /**
  * Setup workspace file watcher for real-time updates
  */
-function setupWorkspaceWatcher(): void {
+async function setupWorkspaceWatcher(): Promise<void> {
   if (!indexingService || workspaceWatcher) return;
   
   try {
     const config = loadConfig();
     const workspaceDir = process.cwd();
     
-    workspaceWatcher = new WorkspaceWatcher(
-      workspaceDir,
+    workspaceWatcher = WorkspaceWatcher.fromConfig(
+      config,
       indexingService,
-      config.supportedExtensions,
-      config.excludePatterns
+      workspaceDir
     );
     
-    console.log('👁️  Starting workspace file watcher for real-time updates...');
-    workspaceWatcher.start();
+    console.log('Starting workspace file watcher for real-time updates...');
+    await workspaceWatcher.start();
   } catch (error) {
     console.error('❌ Error setting up workspace watcher:', error);
     console.error('⚠️  File watching disabled - manual reindexing will be required');

@@ -58,7 +58,12 @@ export const ConfigSchema = z.object({
   rateLimitTokens: z.number().default(30),
   rateLimitWindowMs: z.number().default(60000), // 1 minute
   rateLimitMemoryTTLMs: z.number().default(300000), // 5 minutes bucket cleanup
-  rateLimitUseSessionId: z.boolean().default(true) // Use session_id instead of X-Workspace header
+  rateLimitUseSessionId: z.boolean().default(true), // Use session_id instead of X-Workspace header
+  // File watcher configuration
+  watcherEnabled: z.boolean().default(true),
+  watcherDebounceMs: z.number().default(300), // Debounce file changes
+  watcherQueueConcurrency: z.number().default(1), // Serial processing
+  watcherAutoRestart: z.boolean().default(true) // Auto-restart on errors
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
