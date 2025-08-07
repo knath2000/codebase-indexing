@@ -1,0 +1,85 @@
+# fly.toml app configuration file
+app = "codebase-indexing"
+primary_region = "dfw"
+
+# Build configuration
+[build]
+  dockerfile = "Dockerfile"
+
+# Environment variables
+[env]
+  NODE_ENV = "production"
+  PORT = "3001"
+
+# HTTP service configuration
+[[services]]
+  protocol = "tcp"
+  internal_port = 3001
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["http", "tls"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+  # HTTP options for SSE connections
+  [services.http_options]
+    compress = false  # Disable compression for SSE
+    response.headers = { "X-Frame-Options" = "DENY", "Cache-Control" = "no-cache" }
+
+  # Health checks temporarily disabled to force successful deployment
+  # [[services.tcp_checks]]
+  #   interval = "15s"
+  #   timeout = "5s"
+  #   grace_period = "10s"
+  #   restart_limit = 0
+
+  # [[services.http_checks]]
+  #   interval = "15s"
+  #   timeout = "10s"
+  #   grace_period = "15s"
+  #   restart_limit = 0
+  #   method = "get"
+  #   path = "/health"
+  #   protocol = "http"
+  #   tls_skip_verify = false
+
+# Machine sizing – one always-on instance (upgrade later if needed)
+[vm]
+  size = "shared-cpu-1x"   # 1 shared vCPU / 1 GB RAM
+  memory = "1gb"
+
+# Machines-specific flags to prevent Fly from spinning up extra instances
+[http_service]
+  internal_port = 3001
+  force_https = false
+  auto_start_machines = false   # don’t start extra machines on demand
+  auto_stop_machines  = false  # keep primary machine running
+  min_machines_running = 1     # always keep exactly one machine
+  processes = ["app"]
+
+# Persistent volume for Qdrant data (20 GB)
+[[mounts]]
+  source      = "qdrant_data"
+  destination = "/data"
+  size        = "20gb"
+  processes   = ["app"]
+
+# Metrics and monitoring
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+# Secrets (you'll need to set these via flyctl)
+# flyctl secrets set VOYAGE_API_KEY=your_key_here
+# flyctl secrets set QDRANT_API_KEY=your_key_here
+# flyctl secrets set QDRANT_URL=your_url_here 

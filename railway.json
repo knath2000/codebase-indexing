@@ -1,0 +1,39 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "env": {
+      "NODE_ENV": "production"
+    }
+  },
+  "deployments": {
+    "includeEnvs": [
+      "NODE_ENV",
+      "PORT",
+      "VOYAGE_API_KEY",
+      "QDRANT_URL",
+      "QDRANT_API_KEY",
+      "ENABLE_LLM_RERANKING",
+      "ENABLE_HYBRID_SPARSE",
+      "AUTO_INDEX_ON_CONNECT"
+    ]
+  },
+  "services": [
+    {
+      "name": "codebase-indexing-server",
+      "dockerfilePath": "Dockerfile",
+      "startCommand": "node --max-old-space-size=3072 dist/http-server.js",
+      "healthcheckPath": "/health",
+      "port": 3001,
+      "envs": {
+        "PORT": "3001"
+      },
+      "volumes": [
+        {
+          "name": "qdrant_data",
+          "mountPath": "/data",
+          "size": "20GB"
+        }
+      ]
+    }
+  ]
+} 
