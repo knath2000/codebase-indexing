@@ -8,8 +8,10 @@ import {
   ChunkMetadata, 
   ParsedNode, 
   LanguageConfig, 
-  ChunkStrategy 
+  ChunkStrategy,
+  Config
 } from '../types.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 // Dynamic imports for tree-sitter language grammars with error handling
 const loadLanguage = async (language: string): Promise<any> => {
@@ -139,11 +141,21 @@ const loadLanguage = async (language: string): Promise<any> => {
 export class CodeParser {
   private parser: Parser;
   private languageConfigs: Map<string, LanguageConfig>;
+  private readonly log = createModuleLogger('code-parser')
+  private readonly minChunkSize: number;
+  private readonly maxChunkSize: number;
+  private readonly genericChunkLines: number;
+  private readonly genericChunkOverlap: number;
 
-  constructor() {
+  constructor(config?: Partial<Config>) {
     this.parser = new Parser();
     this.languageConfigs = new Map();
     this.initializeLanguageConfigs();
+    // Configurable privacy limits; fall back to defaults matching types.Config
+    this.maxChunkSize = Math.min(Math.max(config?.chunkSize ?? 800, 100), 1000);
+    this.minChunkSize = 100; // fixed lower bound for privacy
+    this.genericChunkLines = 50;
+    this.genericChunkOverlap = 5;
   }
 
   /**
@@ -152,11 +164,11 @@ export class CodeParser {
   async parseFile(filePath: string): Promise<CodeChunk[]> {
     const content = readFileSync(filePath, 'utf-8');
     const language = this.getLanguageFromFile(filePath);
-    console.log(`[DEBUG] Parsing file: ${filePath} (language: ${language})`);
+    this.log.debug({ filePath, language }, 'Parsing file')
     
     if (!language) {
       const genericChunks = this.parseGenericFile(filePath, content);
-      console.log(`[DEBUG] [${filePath}] No language detected. Generic chunk count: ${genericChunks.length}`);
+      this.log.debug({ filePath, count: genericChunks.length }, 'Generic chunks (no language detected)')
       return genericChunks;
     }
 
@@ -169,18 +181,18 @@ export class CodeParser {
       
       const tree = this.parser.parse(content);
       const chunks = this.extractChunks(tree.rootNode, content, filePath, language);
-      console.log(`[DEBUG] [${filePath}] Chunks extracted with language parser: ${chunks.length}`);
+       this.log.debug({ filePath, count: chunks.length }, 'Chunks extracted with language parser')
       if (chunks.length === 0) {
         // Fallback: generic chunking to ensure every file is represented
         const genericChunks = this.parseGenericContent(content, filePath);
-        console.log(`[DEBUG] [${filePath}] Fallback to generic chunking. Generic chunk count: ${genericChunks.length}`);
+         this.log.debug({ filePath, count: genericChunks.length }, 'Fallback to generic chunking')
         chunks.push(...genericChunks);
       }
       return chunks;
     } catch (error) {
-      console.warn(`[DEBUG] [${filePath}] Failed to parse with ${language} parser, falling back to generic:`, error);
+      this.log.warn({ filePath, err: error }, 'Failed to parse with language parser; falling back to generic')
       const genericChunks = this.parseGenericFile(filePath, content);
-      console.log(`[DEBUG] [${filePath}] Exception fallback. Generic chunk count: ${genericChunks.length}`);
+      this.log.debug({ filePath, count: genericChunks.length }, 'Exception fallback to generic')
       return genericChunks;
     }
   }
@@ -402,12 +414,12 @@ export class CodeParser {
     
     const chunks: CodeChunk[] = [];
     const lines = content.split('\n');
-    const chunkSize = 50; // Lines per chunk
-    const overlap = 5;
+    const chunkSize = this.genericChunkLines; // Lines per chunk
+    const overlap = this.genericChunkOverlap;
 
     // Privacy-focused chunk size enforcement
-    const MIN_CHUNK_SIZE = 100;
-    const MAX_CHUNK_SIZE = 1000;
+    const MIN_CHUNK_SIZE = this.minChunkSize;
+    const MAX_CHUNK_SIZE = this.maxChunkSize;
 
     for (let i = 0; i < lines.length; i += chunkSize - overlap) {
       const chunkLines = lines.slice(i, i + chunkSize);
@@ -427,7 +439,7 @@ export class CodeParser {
 
       if (chunkContent.length > MAX_CHUNK_SIZE) {
         chunkContent = chunkContent.substring(0, MAX_CHUNK_SIZE);
-        console.log(`🔒 Privacy: Truncated generic chunk in ${filePath}:${startLine} to ${MAX_CHUNK_SIZE} chars`);
+        this.log.debug({ filePath, startLine, max: MAX_CHUNK_SIZE }, 'Privacy: truncated generic chunk')
       }
 
       const metadata: ChunkMetadata = {
@@ -611,8 +623,8 @@ export class CodeParser {
     fullContent: string
   ): CodeChunk {
     // Privacy-focused chunk size enforcement
-    const MIN_CHUNK_SIZE = 100;
-    const MAX_CHUNK_SIZE = 1000;
+    const MIN_CHUNK_SIZE = this.minChunkSize;
+    const MAX_CHUNK_SIZE = this.maxChunkSize;
 
     // Skip if content is too small
     if (content.length < MIN_CHUNK_SIZE) {
@@ -622,7 +634,7 @@ export class CodeParser {
     // Truncate if content is too large (privacy protection)
     if (content.length > MAX_CHUNK_SIZE) {
       content = content.substring(0, MAX_CHUNK_SIZE);
-      console.log(`🔒 Privacy: Truncated markdown chunk in ${filePath}:${startLine} to ${MAX_CHUNK_SIZE} chars`);
+      this.log.debug({ filePath, startLine, max: MAX_CHUNK_SIZE }, 'Privacy: truncated markdown chunk')
     }
     const metadata: ChunkMetadata = {
       fileSize: fullContent.length,

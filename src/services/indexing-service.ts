@@ -41,7 +41,7 @@ export class IndexingService extends EventEmitter {
       config.collectionName, // Temporary, will be replaced
       this.voyageClient.getEmbeddingDimension(config.embeddingModel)
     );
-    this.codeParser = new CodeParser();
+    this.codeParser = new CodeParser(config);
     
     this.progress = {
       totalFiles: 0,

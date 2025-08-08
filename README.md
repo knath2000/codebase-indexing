@@ -136,7 +136,7 @@ VOYAGE_API_KEY=your_key_here npm start
 3. **Connect to Cursor**:
    - Add MCP server in Cursor settings
    - Use server URL: `http://localhost:3001`
-   - You should see a green circle with 12 tools available
+    - You should see a green circle with tools available (see Tools section for the current list)
 
 4. **Test it out**:
    - Index your codebase: "Index the current directory"  
@@ -421,10 +421,10 @@ Sign up at [Qdrant Cloud](https://cloud.qdrant.io/) and get your API key and URL
 
 ### 🛠️ MCP Tools
 
-The server provides **16 powerful tools** organized by functionality:
+The server provides a comprehensive toolset organized by functionality:
 
 <details>
-<summary><strong>📁 Indexing Tools (5 tools)</strong></summary>
+<summary><strong>📁 Indexing Tools</strong></summary>
 
 - **`index_directory`**: Index all files in a directory recursively
 - **`index_file`**: Index a single file
@@ -435,7 +435,7 @@ The server provides **16 powerful tools** organized by functionality:
 </details>
 
 <details>
-<summary><strong>🔍 Search Tools (6 tools)</strong></summary>
+<summary><strong>🔍 Search Tools</strong></summary>
 
 - **`codebase_search`**: 🌟 **Natural language search** for codebase understanding (e.g., "How is user authentication handled?", "Database connection setup", "Error handling patterns")
 - **`search_code`**: Search for code chunks using semantic similarity
@@ -447,7 +447,7 @@ The server provides **16 powerful tools** organized by functionality:
 </details>
 
 <details>
-<summary><strong>📊 Statistics & Health Tools (5 tools)</strong></summary>
+<summary><strong>📊 Statistics & Health Tools</strong></summary>
 
 - **`get_indexing_stats`**: Get statistics about the indexed codebase
 - **`get_search_stats`**: Get statistics about the search index

@@ -17,6 +17,7 @@ import {
   ServiceHealth
 } from '../types.js';
 import { EmbeddingPayload } from '../types';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class SearchService {
   private voyageClient: VoyageClient;
@@ -35,6 +36,7 @@ export class SearchService {
     rerankedQueries: number;
     lastQuery: Date | null;
   };
+  private readonly log = createModuleLogger('search-service')
 
   constructor(config: Config, workspaceManager?: WorkspaceManager) {
     this.config = config;
@@ -129,8 +131,7 @@ export class SearchService {
         throw new Error('Failed to connect to Qdrant');
       }
 
-      console.log(`🔍 SearchService initialized for workspace: ${this.currentWorkspace.name}`);
-      console.log(`📊 Using collection: ${this.currentWorkspace.collectionName}`);
+      this.log.info({ workspace: this.currentWorkspace.name, collection: this.currentWorkspace.collectionName }, 'SearchService initialized')
       // Start cache lifecycle once dependencies are confirmed
       this.searchCache.start()
     } catch (error) {
@@ -157,17 +158,17 @@ export class SearchService {
    */
   async search(query: SearchQuery): Promise<SearchResult[]> {
     const requestStartTime = Date.now();
-    console.log(`🔍 [SearchService] Starting enhanced search for: "${query.query}"`);
-    console.log(`🔍 [SearchService] Search options:`, {
+    this.log.info({
+      query: query.query,
       language: query.language,
       chunkType: query.chunkType,
       filePath: query.filePath,
-      limit: query.limit || 50, // Increased from 10 to 50 for better coverage
-      threshold: query.threshold ?? 0.25, // Default now 0.25 for broader recall
+      limit: query.limit || 50,
+      threshold: query.threshold ?? 0.25,
       enableHybrid: query.enableHybrid ?? this.config.enableHybridSearch,
       enableReranking: query.enableReranking ?? this.config.enableLLMReranking,
       llmRerankerTimeoutMs: query.llmRerankerTimeoutMs ?? this.config.llmRerankerTimeoutMs
-    });
+    }, 'Starting enhanced search')
 
     // Update statistics
     this.searchStats.totalQueries++;
@@ -183,7 +184,7 @@ export class SearchService {
       const cachedResults = this.searchCache.get(query);
       if (cachedResults) {
         this.searchStats.cacheHits++;
-        console.log(`🎯 [SearchService] Returning ${cachedResults.length} cached results (took ${Date.now() - requestStartTime}ms)`);
+        this.log.debug({ count: cachedResults.length, ms: Date.now() - requestStartTime }, 'Cache hit – returning results')
         return cachedResults;
       }
 
@@ -195,19 +196,19 @@ export class SearchService {
         'query' // Use 'query' input type for search queries
       );
       console.timeEnd('[SearchService] Embedding generation');
-      console.log(`✅ [SearchService] Generated embedding vector of length ${queryVector.length}`);
+      this.log.debug({ dim: queryVector.length }, 'Generated query embedding')
 
       // Perform dense semantic search
       console.time('[SearchService] Dense search');
       const denseResults = await this.qdrantClient.searchSimilar(query, queryVector);
       console.timeEnd('[SearchService] Dense search');
-      console.log(`🔍 [SearchService] Found ${denseResults.length} dense results`);
+      this.log.debug({ count: denseResults.length }, 'Dense results')
       
       // Log top dense results with scores
       if (denseResults.length > 0) {
-        console.log(`📊 [SearchService] Top dense results:`);
+        this.log.debug('Top dense results')
         denseResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+          this.log.debug({ rank: i + 1, file: result.chunk.filePath, type: result.chunk.chunkType, score: result.score.toFixed(3) })
         });
       }
 
@@ -218,13 +219,13 @@ export class SearchService {
         limit: (query.limit || 20) * 2 // fetch extra candidates for blending
       });
       console.timeEnd('[SearchService] Keyword search');
-      console.log(`🔍 [SearchService] Found ${sparseResults.length} sparse results`);
+      this.log.debug({ count: sparseResults.length }, 'Sparse results')
       
       // Log top sparse results with scores
       if (sparseResults.length > 0) {
-        console.log(`📊 [SearchService] Top sparse results:`);
+        this.log.debug('Top sparse results')
         sparseResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+          this.log.debug({ rank: i + 1, file: result.chunk.filePath, type: result.chunk.chunkType, score: result.score.toFixed(3) })
         });
       }
 
@@ -238,39 +239,39 @@ export class SearchService {
         const hybridResult = await this.hybridSearch.hybridSearch(query, denseResults, sparseResults);
         finalResults = hybridResult.combinedResults;
         console.timeEnd('[SearchService] Hybrid combine');
-        console.log(`🔀 [SearchService] Hybrid search completed with ${finalResults.length} results`);
+        this.log.debug({ count: finalResults.length, alpha: (hybridResult as any).alpha }, 'Hybrid search complete')
         
         // Log top hybrid results with detailed scores
         if (finalResults.length > 0) {
-          console.log(`📊 [SearchService] Top hybrid results (α=${hybridResult.alpha}):`);
+          this.log.debug({ alpha: (hybridResult as any).alpha }, 'Top hybrid results')
           finalResults.slice(0, 3).forEach((result, i) => {
             const hybridScore = result.hybridScore;
             const scoreDetail = hybridScore ? 
               `Dense: ${hybridScore.dense.toFixed(3)}, Sparse: ${hybridScore.sparse?.toFixed(3) || 'N/A'}, Combined: ${hybridScore.combined.toFixed(3)}` :
               `Score: ${result.score.toFixed(3)}`;
-            console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - ${scoreDetail}`);
+            this.log.debug({ rank: i + 1, file: result.chunk.filePath, type: result.chunk.chunkType, scoreDetail })
           });
         }
       } else {
         // If hybrid disabled, fall back to dense, then sparse as secondary
         finalResults = denseResults.length > 0 ? denseResults : sparseResults;
-        console.log(`📊 [SearchService] Using ${denseResults.length > 0 ? 'dense' : 'sparse'} results (hybrid disabled)`);
+        this.log.debug({ mode: denseResults.length > 0 ? 'dense' : 'sparse' }, 'Hybrid disabled; using single mode results')
       }
 
       // Apply implementation boosting if enabled (default true)
       if (query.preferImplementation !== false) {
         console.time('[SearchService] Implementation boosting');
-        console.log(`📊 [SearchService] Before implementation boosting - Top 3:`);
+        this.log.debug('Before implementation boosting - Top 3')
         finalResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+          this.log.debug({ rank: i + 1, file: result.chunk.filePath, type: result.chunk.chunkType, score: result.score.toFixed(3) })
         });
         
         finalResults = this.boostImplementationResults(finalResults);
         console.timeEnd('[SearchService] Implementation boosting');
         
-        console.log(`📊 [SearchService] After implementation boosting - Top 3:`);
+        this.log.debug('After implementation boosting - Top 3')
         finalResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
+          this.log.debug({ rank: i + 1, file: result.chunk.filePath, type: result.chunk.chunkType, score: result.score.toFixed(3) })
         });
       }
 
@@ -289,76 +290,10 @@ export class SearchService {
       });
       console.timeEnd('[SearchService] Context optimization');
 
-      // Apply LLM re-ranking if enabled and within overall timeout
-      const enableReranking = query.enableReranking ?? this.config.enableLLMReranking;
-      const currentElapsedTime = Date.now() - requestStartTime;
-      const overallTimeout = query.llmRerankerTimeoutMs || this.config.llmRerankerTimeoutMs || 50000; // Use LLM reranker timeout as proxy for overall RPC time
-      
-      if (enableReranking && this.llmReranker.getStats().enabled && finalResults.length > 1 && currentElapsedTime < overallTimeout) {
-        this.searchStats.rerankedQueries++;
-        
-        console.log(`📊 [SearchService] Before LLM reranking - Top 3:`);
-        finalResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
-        });
-        
-        console.time('[SearchService] LLM re-ranking');
-        
-        // Convert SearchResult[] to the format expected by the reranker
-        const searchResultsForReranker = finalResults.slice(0, 10).map(result => ({
-          chunkId: result.chunk.id, // Use 'id' instead of 'chunkId'
-          score: result.score,
-          filePath: result.chunk.filePath,
-          startLine: result.chunk.startLine,
-          endLine: result.chunk.endLine,
-          content: result.snippet,
-          chunkType: result.chunk.chunkType,
-          language: result.chunk.language
-        }));
-        
-        const rerankerResponse = await this.llmReranker.rerank(
-          query.query,
-          searchResultsForReranker,
-          Math.min(query.limit || 10, 10)
-        );
-        
-        // Convert reranked results back to SearchResult format
-        if (rerankerResponse.reranked) {
-          finalResults = rerankerResponse.results.map(rerankedResult => {
-            // Find the original result to preserve all metadata
-            const originalResult = finalResults.find(r => r.chunk.id === rerankedResult.chunkId);
-            return originalResult || {
-              id: rerankedResult.chunkId,
-              chunk: {
-                id: rerankedResult.chunkId,
-                filePath: rerankedResult.filePath,
-                startLine: rerankedResult.startLine,
-                endLine: rerankedResult.endLine,
-                content: rerankedResult.content,
-                chunkType: rerankedResult.chunkType || 'generic',
-                language: rerankedResult.language || 'unknown',
-                functionName: undefined,
-                className: undefined,
-                contentHash: '',
-                metadata: { isTest: false }
-              },
-              score: rerankedResult.score,
-              snippet: rerankedResult.content.substring(0, 200),
-              context: undefined
-            };
-          }).filter((result): result is SearchResult => result !== null);
-        }
-        
-        console.timeEnd('[SearchService] LLM re-ranking');
-        console.log(`🧠 [SearchService] LLM re-ranking completed with ${finalResults.length} results`);
-        
-        console.log(`📊 [SearchService] After LLM reranking - Top 3:`);
-        finalResults.slice(0, 3).forEach((result, i) => {
-          console.log(`   ${i + 1}. ${result.chunk.filePath} (${result.chunk.chunkType}) - Score: ${result.score.toFixed(3)}`);
-        });
-      } else if (enableReranking && currentElapsedTime >= overallTimeout) {
-        console.warn(`[SearchService] Skipping LLM re-ranking due to overall timeout. Elapsed: ${currentElapsedTime}ms / Timeout: ${overallTimeout}ms`);
-      }
+      // Apply LLM re-ranking if enabled and within timing constraints
+      const { results: rerankedResults, didRerank } = await this.maybeRerank(query, finalResults, requestStartTime);
+      if (didRerank) this.searchStats.rerankedQueries++;
+      finalResults = rerankedResults;
 
       // Post-process and enhance results
       console.time('[SearchService] Post-processing');
@@ -370,21 +305,21 @@ export class SearchService {
         this.searchCache.set(query, processedResults);
       }
       
-      console.log(`✅ [SearchService] Returning ${processedResults.length} enhanced results (total time: ${Date.now() - requestStartTime}ms)`);
+      this.log.info({ count: processedResults.length, ms: Date.now() - requestStartTime, query: query.query }, 'Returning enhanced results')
       
       // Log final score pipeline summary
-      console.log(`📊 [SearchService] FINAL RANKING - Query: "${query.query}"`);
+      this.log.debug({ query: query.query }, 'FINAL RANKING')
       processedResults.slice(0, 5).forEach((result, i) => {
         const fileKind = result.chunk.filePath.includes('.md') || 
                         result.chunk.filePath.includes('README') || 
                         result.chunk.filePath.includes('docs/') ? '📝' : '🔥';
-        console.log(`   ${i + 1}. ${fileKind} ${result.chunk.filePath} (${result.chunk.chunkType}) - Final: ${result.score.toFixed(3)}`);
+        this.log.debug({ rank: i + 1, kind: fileKind, file: result.chunk.filePath, type: result.chunk.chunkType, final: result.score.toFixed(3) })
       });
       
       return processedResults;
 
     } catch (error) {
-      console.error(`❌ [SearchService] Enhanced search failed:`, error);
+      this.log.error({ err: error }, 'Enhanced search failed')
       if (error instanceof Error) {
         throw new Error(`SearchService failed: ${error.message}`);
       }
@@ -576,7 +511,7 @@ export class SearchService {
       }
       return null;
     } catch (error) {
-      console.error(`Error getting chunk ${chunkId}:`, error);
+      this.log.error({ err: error, chunkId }, 'Error getting chunk by id')
       return null;
     }
   }
@@ -624,7 +559,7 @@ export class SearchService {
         context
       };
     } catch (error) {
-      console.error(`Error getting context for chunk ${chunkId}:`, error);
+      this.log.error({ err: error, chunkId }, 'Error getting code context')
       return null;
     }
   }
@@ -640,12 +575,12 @@ export class SearchService {
    * Get comprehensive search statistics (enhanced for Cursor-like codebase insights)
    */
   async getSearchStats(): Promise<SearchStats> {
-    console.log(`📊 [SearchService] Gathering comprehensive search statistics...`);
+    this.log.debug('Gathering comprehensive search statistics')
     
     try {
       // Get total chunks count
       const totalChunks = await this.qdrantClient.countPoints();
-      console.log(`📊 [SearchService] Total chunks indexed: ${totalChunks}`);
+      this.log.debug({ totalChunks }, 'Total chunks indexed')
 
       // Get collection info for status
       const collectionInfo = await this.qdrantClient.getCollectionInfo();
@@ -684,7 +619,7 @@ export class SearchService {
       };
       
     } catch (error) {
-      console.error(`❌ [SearchService] Failed to gather search statistics:`, error);
+      this.log.error({ err: error }, 'Failed to gather search statistics')
       throw new Error(`SearchService failed to get search stats: ${String(error)}`);
     }
   }
@@ -849,6 +784,92 @@ export class SearchService {
     }));
 
     return enhancedResults;
+  }
+
+  /**
+   * Log top N results in a consistent, structured way
+   */
+  private logTop(prefix: string, results: SearchResult[], n: number = 3): void {
+    if (!results || results.length === 0) return;
+    this.log.debug({ prefix, count: results.length }, 'Top results');
+    results.slice(0, n).forEach((r, i) => {
+      this.log.debug({ rank: i + 1, file: r.chunk.filePath, type: r.chunk.chunkType, score: r.score.toFixed(3) });
+    });
+  }
+
+  /**
+   * Optionally apply LLM re-ranking given timing and configuration constraints
+   */
+  private async maybeRerank(
+    query: SearchQuery,
+    results: SearchResult[],
+    requestStartTime: number
+  ): Promise<{ results: SearchResult[]; didRerank: boolean }> {
+    const enableReranking = query.enableReranking ?? this.config.enableLLMReranking;
+    const elapsed = Date.now() - requestStartTime;
+    const overallTimeout = query.llmRerankerTimeoutMs || this.config.llmRerankerTimeoutMs || 50000;
+
+    if (!enableReranking || !this.llmReranker.getStats().enabled || results.length <= 1) {
+      return { results, didRerank: false };
+    }
+
+    if (elapsed >= overallTimeout) {
+      this.log.warn({ elapsedMs: elapsed, overallTimeout }, 'Skipping LLM reranking due to overall timeout');
+      return { results, didRerank: false };
+    }
+
+    this.log.debug('Before LLM reranking - Top 3');
+    this.logTop('before_llm_rerank', results);
+
+    console.time('[SearchService] LLM re-ranking');
+    const candidates = results.slice(0, 10).map(r => ({
+      chunkId: r.chunk.id,
+      score: r.score,
+      filePath: r.chunk.filePath,
+      startLine: r.chunk.startLine,
+      endLine: r.chunk.endLine,
+      content: r.snippet,
+      chunkType: r.chunk.chunkType,
+      language: r.chunk.language
+    }));
+
+    const rerankerResponse = await this.llmReranker.rerank(
+      query.query,
+      candidates,
+      Math.min(query.limit || 10, 10)
+    );
+
+    let reranked = results;
+    if (rerankerResponse.reranked) {
+      reranked = rerankerResponse.results.map(rr => {
+        const orig = results.find(r => r.chunk.id === rr.chunkId);
+        return orig || {
+          id: rr.chunkId,
+          chunk: {
+            id: rr.chunkId,
+            filePath: rr.filePath,
+            startLine: rr.startLine,
+            endLine: rr.endLine,
+            content: rr.content,
+            chunkType: rr.chunkType || 'generic',
+            language: rr.language || 'unknown',
+            functionName: undefined,
+            className: undefined,
+            contentHash: '',
+            metadata: { isTest: false }
+          },
+          score: rr.score,
+          snippet: rr.content.substring(0, 200),
+          context: undefined
+        } as SearchResult;
+      }).filter((r): r is SearchResult => !!r);
+    }
+
+    console.timeEnd('[SearchService] LLM re-ranking');
+    this.log.debug({ count: reranked.length }, 'LLM re-ranking complete');
+    this.log.debug('After LLM reranking - Top 3');
+    this.logTop('after_llm_rerank', reranked);
+    return { results: reranked, didRerank: true };
   }
 
   /**
