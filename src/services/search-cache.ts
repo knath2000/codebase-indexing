@@ -164,9 +164,7 @@ export class SearchCacheService {
 
     keysToDelete.forEach(key => this.cache.delete(key));
 
-    if (keysToDelete.length > 0) {
-      console.log(`🔄 [SearchCache] Invalidated ${keysToDelete.length} cache entries for file: ${filePath}`);
-    }
+    if (keysToDelete.length > 0) this.log.debug({ count: keysToDelete.length, filePath }, 'Invalidated cache entries for file')
   }
 
   /**
@@ -183,9 +181,7 @@ export class SearchCacheService {
 
     keysToDelete.forEach(key => this.cache.delete(key));
 
-    if (keysToDelete.length > 0) {
-      console.log(`🔄 [SearchCache] Invalidated ${keysToDelete.length} cache entries for language: ${language}`);
-    }
+    if (keysToDelete.length > 0) this.log.debug({ count: keysToDelete.length, language }, 'Invalidated cache entries for language')
   }
 
   /**

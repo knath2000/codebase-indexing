@@ -5,10 +5,16 @@ import {
   Config,
   SparseVector 
 } from '../types.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class HybridSearchService {
   private enabled: boolean;
   private alpha: number; // Weight for dense vs sparse (0.7 = 70% dense, 30% sparse)
+  private totalQueries = 0;
+  private denseOnlyQueries = 0;
+  private hybridQueries = 0;
+  private cumulativeImprovement = 0; // naive metric based on top score delta
+  private readonly log = createModuleLogger('hybrid-search')
 
   constructor(config: Config) {
     this.enabled = config.enableHybridSearch;
@@ -32,6 +38,8 @@ export class HybridSearchService {
   ): Promise<HybridSearchResult> {
     if (!this.enabled || !sparseResults) {
       // Return dense-only results if hybrid is disabled or sparse unavailable
+      this.totalQueries++;
+      this.denseOnlyQueries++;
       return {
         denseResults,
         sparseResults: sparseResults || [],
@@ -39,14 +47,20 @@ export class HybridSearchService {
         alpha: 1.0
       };
     }
-
-    console.log(`🔀 [HybridSearch] Combining ${denseResults.length} dense + ${sparseResults.length} sparse results`);
+    this.totalQueries++;
+    this.hybridQueries++;
+    this.log.debug({ dense: denseResults.length, sparse: sparseResults.length, alpha: this.alpha }, 'Combining dense+sparse')
 
     try {
       // Combine and score results
       const combinedResults = this.combineResults(denseResults, sparseResults, this.alpha);
-      
-      console.log(`✅ [HybridSearch] Combined to ${combinedResults.length} results with α=${this.alpha}`);
+      // naive improvement metric: top combined vs top dense
+      if (denseResults.length > 0 && combinedResults.length > 0) {
+        const topDense = denseResults[0].score;
+        const topHybrid = combinedResults[0].score;
+        this.cumulativeImprovement += Math.max(0, topHybrid - topDense);
+      }
+      this.log.debug({ count: combinedResults.length, alpha: this.alpha }, 'Hybrid combine complete')
 
       return {
         denseResults,
@@ -56,7 +70,7 @@ export class HybridSearchService {
       };
 
     } catch (error) {
-      console.error(`❌ [HybridSearch] Hybrid search failed:`, error);
+      this.log.error({ err: error }, 'Hybrid search failed; falling back to dense')
       
       // Fallback to dense results only
       return {
@@ -255,10 +269,10 @@ export class HybridSearchService {
     return {
       enabled: this.enabled,
       alpha: this.alpha,
-      totalQueries: 0, // TODO: Implement query tracking
-      denseOnlyQueries: 0, // TODO: Implement tracking
-      hybridQueries: 0, // TODO: Implement tracking
-      averageImprovement: 0.15 // TODO: Implement improvement tracking
+      totalQueries: this.totalQueries,
+      denseOnlyQueries: this.denseOnlyQueries,
+      hybridQueries: this.hybridQueries,
+      averageImprovement: this.totalQueries > 0 ? this.cumulativeImprovement / this.totalQueries : 0
     };
   }
 } 

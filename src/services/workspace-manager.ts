@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { createModuleLogger } from '../logging/logger.js'
 import { readdir, stat, readFile } from 'fs/promises';
 import { join, resolve, basename } from 'path';
 import { exec } from 'child_process';
@@ -37,6 +38,7 @@ export class WorkspaceManager extends EventEmitter {
   private workspaces = new Map<string, WorkspaceInfo>();
   private currentWorkspace: WorkspaceInfo | null = null;
   private workspaceProfiles = new Map<string, WorkspaceProfile>();
+  private readonly log = createModuleLogger('workspace-manager')
 
   constructor() {
     super();
@@ -47,32 +49,32 @@ export class WorkspaceManager extends EventEmitter {
    */
   async detectCurrentWorkspace(workspacePath: string = process.cwd()): Promise<WorkspaceInfo> {
     const absolutePath = resolve(workspacePath);
-    console.log(`🔍 Detecting workspace type for: ${absolutePath}`);
+    this.log.info({ path: absolutePath }, 'Detecting workspace type')
 
     // Check for VSCode multi-root workspace files
     const multiRootWorkspace = await this.detectMultiRootWorkspace(absolutePath);
     if (multiRootWorkspace) {
-      console.log(`📁 Detected multi-root workspace: ${multiRootWorkspace.name}`);
+      this.log.info({ name: multiRootWorkspace.name }, 'Detected multi-root workspace')
       return this.registerWorkspace(multiRootWorkspace);
     }
 
     // Check for Git repository
     const gitWorkspace = await this.detectGitWorkspace(absolutePath);
     if (gitWorkspace) {
-      console.log(`🔗 Detected Git workspace: ${gitWorkspace.name}`);
+      this.log.info({ name: gitWorkspace.name }, 'Detected Git workspace')
       return this.registerWorkspace(gitWorkspace);
     }
 
     // Check for npm/package.json workspace
     const npmWorkspace = await this.detectNpmWorkspace(absolutePath);
     if (npmWorkspace) {
-      console.log(`📦 Detected npm workspace: ${npmWorkspace.name}`);
+      this.log.info({ name: npmWorkspace.name }, 'Detected npm workspace')
       return this.registerWorkspace(npmWorkspace);
     }
 
     // Fallback to directory-based workspace
     const directoryWorkspace = await this.createDirectoryWorkspace(absolutePath);
-    console.log(`📂 Created directory workspace: ${directoryWorkspace.name}`);
+    this.log.info({ name: directoryWorkspace.name }, 'Created directory workspace')
     return this.registerWorkspace(directoryWorkspace);
   }
 
@@ -115,7 +117,7 @@ export class WorkspaceManager extends EventEmitter {
         collectionName: `workspace_${workspaceId.substring(0, 12)}`
       };
     } catch (error) {
-      console.log(`⚠️  Failed to detect multi-root workspace: ${error}`);
+      this.log.warn({ err: error }, 'Failed to detect multi-root workspace')
       return null;
     }
   }
@@ -239,16 +241,15 @@ export class WorkspaceManager extends EventEmitter {
     this.currentWorkspace = workspace;
     
     if (!wasCurrentWorkspace) {
-      console.log(`🔄 Workspace changed to: ${workspace.name} (${workspace.type})`);
-      console.log(`📊 Collection: ${workspace.collectionName}`);
-      console.log(`📁 Folders: ${workspace.folders.length} folder(s)`);
-      workspace.folders.forEach((folder, i) => {
-        console.log(`   ${i + 1}. ${folder}`);
-      });
-      
+      this.log.info({
+        name: workspace.name,
+        type: workspace.type,
+        collection: workspace.collectionName,
+        folders: workspace.folders.length
+      }, 'Workspace changed')
       this.emit('workspace-changed', workspace);
     } else {
-      console.log(`✅ Current workspace confirmed: ${workspace.name}`);
+      this.log.debug({ name: workspace.name }, 'Current workspace confirmed')
     }
 
     return workspace;
@@ -282,14 +283,14 @@ export class WorkspaceManager extends EventEmitter {
   async switchToWorkspace(workspaceId: string): Promise<WorkspaceInfo | null> {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) {
-      console.log(`❌ Workspace not found: ${workspaceId}`);
+      this.log.warn({ workspaceId }, 'Workspace not found')
       return null;
     }
 
     workspace.lastAccessed = new Date();
     this.currentWorkspace = workspace;
     
-    console.log(`🔄 Switched to workspace: ${workspace.name}`);
+    this.log.info({ name: workspace.name }, 'Switched workspace')
     this.emit('workspace-changed', workspace);
     
     return workspace;
@@ -310,7 +311,7 @@ export class WorkspaceManager extends EventEmitter {
     };
 
     this.workspaceProfiles.set(workspace.id, profile);
-    console.log(`⚙️  Created workspace profile for: ${workspace.name}`);
+    this.log.info({ name: workspace.name }, 'Created workspace profile')
     
     return profile;
   }
@@ -338,7 +339,7 @@ export class WorkspaceManager extends EventEmitter {
     }
 
     if (staleWorkspaces.length > 0) {
-      console.log(`🧹 Cleaned up ${staleWorkspaces.length} stale workspace(s)`);
+      this.log.info({ count: staleWorkspaces.length }, 'Cleaned up stale workspaces')
     }
 
     return staleWorkspaces;
@@ -383,6 +384,6 @@ export class WorkspaceManager extends EventEmitter {
       this.workspaceProfiles.set(profile.id, profile);
     });
 
-    console.log(`📥 Imported ${config.workspaces.length} workspaces and ${config.profiles.length} profiles`);
+    this.log.info({ workspaces: config.workspaces.length, profiles: config.profiles.length }, 'Imported workspace configuration')
   }
 } 
