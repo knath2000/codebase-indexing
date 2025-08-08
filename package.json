@@ -1,8 +1,11 @@
 {
-  "name": "mcp-codebase-indexing-server",
+  "name": "@knath2000/codebase-indexing-mcp",
   "version": "1.0.0",
   "description": "MCP server for codebase indexing with Voyage AI embeddings and Qdrant vector storage",
   "main": "dist/index.js",
+  "bin": {
+    "codebase-indexing-mcp": "dist/railway-client.js"
+  },
   "type": "module",
   "scripts": {
     "build": "tsc",
