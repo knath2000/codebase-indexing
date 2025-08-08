@@ -684,9 +684,9 @@ export function setupMcpTools(
             const metrics = Object.entries(health.metrics)
               .map(([name, value]) => `- ${name}: ${value.toFixed(2)}`)
               .join('\n');
-            return {
-              content: [{
-                type: 'text',
+          return {
+            content: [{
+              type: 'text',
                 text: `Health Status: ${health.status}\n` +
                       `Timestamp: ${health.timestamp.toISOString()}\n` +
                       `Version: ${health.version}\n` +

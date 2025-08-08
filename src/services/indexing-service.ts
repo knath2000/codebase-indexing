@@ -77,6 +77,20 @@ export class IndexingService extends EventEmitter {
       searchQueriesServed: 0,
       averageSearchLatency: 0
     };
+
+    // React to workspace changes: update Qdrant client, ensure collection, and optionally auto-index
+    this.workspaceManager.on('workspace-changed', async (workspace: WorkspaceInfo) => {
+      try {
+        this.updateQdrantClientForWorkspace(workspace);
+        await this.qdrantClient.initializeCollection();
+        if ((this.config as any).flags?.autoIndexOnConnect) {
+          console.log(`📂 Detected new workspace "${workspace.name}" – auto-indexing root: ${workspace.rootPath}`);
+          await this.indexDirectory(workspace.rootPath);
+        }
+      } catch (err) {
+        console.error('❌ Failed handling workspace-changed event:', err);
+      }
+    });
   }
 
   /**
@@ -116,7 +130,7 @@ export class IndexingService extends EventEmitter {
   /**
    * Update Qdrant client for workspace-specific collection
    */
-  private updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
+  public updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
     this.qdrantClient = new QdrantVectorClient(
       this.config.qdrantUrl,
       this.config.qdrantApiKey,

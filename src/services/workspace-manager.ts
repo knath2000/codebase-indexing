@@ -247,6 +247,7 @@ export class WorkspaceManager extends EventEmitter {
         collection: workspace.collectionName,
         folders: workspace.folders.length
       }, 'Workspace changed')
+      // Emit synchronously so services can react immediately (update Qdrant clients)
       this.emit('workspace-changed', workspace);
     } else {
       this.log.debug({ name: workspace.name }, 'Current workspace confirmed')

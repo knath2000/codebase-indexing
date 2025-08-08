@@ -66,6 +66,20 @@ export class SearchService {
       rerankedQueries: 0,
       lastQuery: null
     };
+
+    // React to workspace changes: update Qdrant client and (optionally) warm caches
+    this.workspaceManager.on('workspace-changed', async (workspace: WorkspaceInfo) => {
+      try {
+        this.updateQdrantClientForWorkspace(workspace);
+        // Cheap touch to confirm collection exists for searches after switch
+        await this.qdrantClient.initializeCollection?.();
+        this.log.info({ workspace: workspace.name, collection: workspace.collectionName }, 'SearchService updated for new workspace');
+        // Optional: clear caches to avoid cross-workspace leakage
+        this.clearCaches();
+      } catch (err) {
+        this.log.error({ err }, 'Failed handling workspace-changed in SearchService');
+      }
+    });
   }
 
   /**
@@ -142,7 +156,7 @@ export class SearchService {
   /**
    * Update Qdrant client for workspace-specific collection
    */
-  private updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
+  public updateQdrantClientForWorkspace(workspace: WorkspaceInfo): void {
     this.qdrantClient = new QdrantVectorClient(
       this.config.qdrantUrl,
       this.config.qdrantApiKey,
