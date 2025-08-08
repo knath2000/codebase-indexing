@@ -12,6 +12,7 @@ import {
   Config
 } from '../types.js';
 import { createModuleLogger } from '../logging/logger.js'
+const parseLog = createModuleLogger('code-parser')
 
 // Dynamic imports for tree-sitter language grammars with error handling
 const loadLanguage = async (language: string): Promise<any> => {
@@ -19,11 +20,11 @@ const loadLanguage = async (language: string): Promise<any> => {
     switch (language) {
       case 'javascript': {
         const jsModule = await import('tree-sitter-javascript');
-        console.log(`JavaScript module loaded:`, { 
+        parseLog.debug({ 
           hasDefault: !!jsModule.default, 
           keys: Object.keys(jsModule),
           defaultType: typeof jsModule.default 
-        });
+        }, 'JavaScript module loaded')
         
         // Try different export patterns
         let grammar = jsModule.default;
@@ -41,14 +42,14 @@ const loadLanguage = async (language: string): Promise<any> => {
       }
       case 'typescript': {
         const tsModule = await import('tree-sitter-typescript');
-        console.log(`TypeScript module loaded:`, { 
+        parseLog.debug({ 
           hasTypescript: !!tsModule.typescript, 
           hasTsx: !!tsModule.tsx,
           keys: Object.keys(tsModule),
           typescriptType: typeof tsModule.typescript,
           defaultType: typeof tsModule.default,
           defaultKeys: tsModule.default ? Object.keys(tsModule.default) : []
-        });
+        }, 'TypeScript module loaded')
         
         // Try different export patterns
         let grammar = tsModule.typescript;
@@ -64,14 +65,14 @@ const loadLanguage = async (language: string): Promise<any> => {
       }
       case 'tsx': {
         const tsxModule = await import('tree-sitter-typescript');
-        console.log(`TSX module loaded:`, { 
+        parseLog.debug({ 
           hasTypescript: !!tsxModule.typescript, 
           hasTsx: !!tsxModule.tsx,
           keys: Object.keys(tsxModule),
           tsxType: typeof tsxModule.tsx,
           defaultType: typeof tsxModule.default,
           defaultKeys: tsxModule.default ? Object.keys(tsxModule.default) : []
-        });
+        }, 'TSX module loaded')
         
         // Try different export patterns
         let grammar = tsxModule.tsx;
@@ -87,11 +88,11 @@ const loadLanguage = async (language: string): Promise<any> => {
       }
       case 'python': {
         const pyModule = await import('tree-sitter-python');
-        console.log(`Python module loaded:`, { 
+        parseLog.debug({ 
           hasDefault: !!pyModule.default, 
           keys: Object.keys(pyModule),
           defaultType: typeof pyModule.default 
-        });
+        }, 'Python module loaded')
         
         // Try different export patterns
         let grammar = pyModule.default;
@@ -109,11 +110,11 @@ const loadLanguage = async (language: string): Promise<any> => {
       }
       case 'markdown': {
         const mdModule = await import('tree-sitter-markdown');
-        console.log(`Markdown module loaded:`, { 
+        parseLog.debug({ 
           hasDefault: !!mdModule.default, 
           keys: Object.keys(mdModule),
           defaultType: typeof mdModule.default 
-        });
+        }, 'Markdown module loaded')
         
         // Try different export patterns for markdown
         let grammar = mdModule.default;
@@ -133,7 +134,7 @@ const loadLanguage = async (language: string): Promise<any> => {
         throw new Error(`Language parser not available for: ${language}`);
     }
   } catch (error) {
-    console.warn(`Failed to load Tree-sitter language grammar for ${language}:`, error);
+    parseLog.warn({ language, err: error }, 'Failed to load Tree-sitter language grammar');
     throw error;
   }
 };
