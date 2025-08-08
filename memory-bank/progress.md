@@ -53,6 +53,7 @@
 - [x] **Similarity Finding**: Find similar code chunks
 - [x] **Filtering Options**: Language, chunk type, file path filters
 - [x] **LLM Re-ranking**: ✅ **FULLY OPERATIONAL** - gpt-4.1-mini via LangDB gateway - 100% operational. Production deployment January 15, 2025.
+  - [x] **Custom Model Support**: ✅ Integrated LangDB custom reranker `langdb/codebasererankerv1_5hag0gjs` with OpenAI‑compatible endpoint. Fixed base URL issues and validated via curl and enhanced stats.
 
 ### Advanced Features
 - [x] **Hybrid Search**: Combines semantic vector search with optional LLM reranking for optimal relevance

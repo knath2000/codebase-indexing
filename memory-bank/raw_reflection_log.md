@@ -3,6 +3,41 @@
 ## Task Reflections
 
 ---
+**Date:** 2025-08-08  
+**TaskRef:** "LangDB custom reranker integration on Railway + Cursor MCP end‑to‑end validation"
+
+**Learnings:**
+- OpenAI‑compatible gateways must use a project‑scoped base URL: `https://api.<region>.langdb.ai/<PROJECT_ID>/v1`. Any double appends (e.g., adding another project segment or a second `/v1`) cause 404s from the ALB.
+- The MCP server’s reranker uses OpenAI SDK `chat.completions.create` (see `src/services/llm-reranker.ts`), so the resolved `baseURL` must contain `/v1` and the endpoint `/chat/completions` must exist.
+- When enforcing `response_format={"type":"json_object"}`, LangDB requires that the prompt/messages mention “JSON”; otherwise requests are rejected with an `invalid_request_error`.
+- Model ids must match the exact slug returned by LangDB (`GET /v1/models`), e.g. `langdb/codebasererankerv1_5hag0gjs`.
+- Cursor’s built‑in @Codebase provides a useful baseline; our MCP server with LLM re‑ranking yields more implementation‑focused results once the reranker is healthy.
+
+**Difficulties:**
+- Persistent 404s during reranking due to an incorrect boot‑time base URL: `.../<PROJECT_ID>/v1/proj_abc123/v1` (double‑appended project path).
+- JSON enforcement errors when the message payload did not explicitly request JSON output.
+
+**Resolutions:**
+- Standardized Railway vars to a single authoritative base URL and removed any secondary project var:
+  - `LLM_RERANKER_BASE_URL=https://api.us-east-1.langdb.ai/<PROJECT_ID>/v1`
+  - Unset/empty `LLM_RERANKER_PROJECT_ID`
+  - `LLM_RERANKER_MODEL=langdb/codebasererankerv1_5hag0gjs`
+  - `LLM_RERANKER_API_KEY=<langdb_token>`
+  - `LLM_RERANKER_TIMEOUT_MS=25000`
+- Verified with curl against `/chat/completions` and included a system message requiring strict JSON when using `response_format=json_object`.
+- Confirmed reranking path via `get_enhanced_stats` (rerankedQueries increments) and logs `[LLMReranker] Calling ... via OpenAI SDK` without 404s.
+
+**Successes:**
+- Custom LangDB reranker integrated and callable from the MCP server.
+- Reindexed and executed multiple natural‑language queries; results consistent with implementation‑first ordering.
+- Documented a repeatable comparison process against Cursor @Codebase.
+
+**Improvements_Identified_For_Consolidation:**
+- Print resolved `baseURL` and `model` at startup and clearly indicate if a project var was detected.
+- Add a lightweight reranker health probe and expose status via `get_enhanced_stats`.
+- Treat `LLM_RERANKER_PROJECT_ID` and a project‑scoped `LLM_RERANKER_BASE_URL` as mutually exclusive in config validation.
+
+---
 **Date:** 2025-01-15  
 **TaskRef:** "Autonomous Auto-Indexing & Real-Time File Watching Implementation"
 

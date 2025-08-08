@@ -161,6 +161,19 @@ FROM node:18-alpine AS runtime
 - **Extensibility**: Additional languages via grammar installation
 - **WASM Runtime**: WebAssembly for universal parsing support
 
+### LangDB AI Gateway (LLM Reranker)
+- Region endpoint pattern: `https://api.<region>.langdb.ai`
+- Project-scoped base URL required by OpenAI SDK: `https://api.us-east-1.langdb.ai/<PROJECT_ID>/v1`
+- Model id must match slug from `GET /v1/models` (e.g., `langdb/codebasererankerv1_5hag0gjs`)
+- JSON enforcement: when using `response_format={"type":"json_object"}`, ensure messages instruct the model to return JSON
+- Recommended env (Railway):
+  - `LLM_RERANKER_BASE_URL=https://api.us-east-1.langdb.ai/<PROJECT_ID>/v1`
+  - `LLM_RERANKER_MODEL=langdb/codebasererankerv1_5hag0gjs`
+  - `LLM_RERANKER_API_KEY=***`
+  - `ENABLE_LLM_RERANKING=true`
+  - `LLM_RERANKER_TIMEOUT_MS=25000`
+  - Avoid setting `LLM_RERANKER_PROJECT_ID` if `LLM_RERANKER_BASE_URL` already includes `<PROJECT_ID>`
+
 ## Development Setup
 
 ### Prerequisites
