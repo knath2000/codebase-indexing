@@ -6,7 +6,8 @@
 - Configuration safety: Added reranker base URL normalization and Zod-validated feature flags attached to `config.flags`.
 - Health authority: `HealthMonitorService` designated as single health aggregator; `get_health_status` delegated.
 - Cache predictability: True LRU search cache with lifecycle and metrics; TTL/size configurable.
-- Documentation: README updated (flags and reranker normalization). Clean build and code pushed to GitHub to trigger Railway redeploy.
+- Services logging & structure: Structured logging added to `SearchService`, `CodeParser`, `HybridSearchService`, `WorkspaceManager`, and `SearchCacheService`. Centralized stdio MCP tool wiring via `setupMcpTools`.
+- Documentation: README updated (flags, reranker normalization, and endpoint docs). Clean build and code pushed to GitHub to trigger Railway redeploy.
 
 **Troubleshooting & Validation Process:**
 - Identified chunking issue due to stale volume and lack of debug visibility.

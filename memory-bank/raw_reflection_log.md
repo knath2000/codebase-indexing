@@ -29,6 +29,29 @@ Improvements_Identified_For_Consolidation:
 - Add health metrics to enhanced stats (counters, latency histograms) and reranker health probe.
 
 ---
+
+---
+**Date:** 2025-08-08  
+**TaskRef:** "Services logging unification, stdio tool wiring centralization, hybrid stats, parser config"
+
+Learnings:
+- Centralizing MCP tool registration prevents drift between HTTP and stdio servers; a single `setupMcpTools` source of truth reduces duplication.
+- Structured logging across services (search, parser, hybrid, workspace, cache) dramatically improves diagnosability vs ad-hoc console prints.
+- Exposing light metrics (hybrid usage, naive improvement) is low-risk and helps validate feature impact.
+
+Difficulties:
+- Ensuring TypeScript signatures remain stable while extracting helpers (e.g., `maybeRerank`) required careful typing to avoid unused symbol warnings.
+- Coordinating logs between HTTP and stdio entrypoints to avoid double-registration and conflicting handlers required auditing call sites.
+
+Successes:
+- Reduced ~500 LOC of duplicated handlers in stdio by reusing shared tool wiring.
+- Achieved consistent, structured logs in hybrid, workspace manager, and search cache invalidations.
+
+Improvements_Identified_For_Consolidation:
+- Pattern: “Single tool wiring function” for multi-transport servers.
+- Pattern: “Module-level structured logger per service” with consistent fields.
+- Metric hooks: add minimal counters to validate impact (hybrid, cache, reranker).
+---
 **Date:** 2025-08-08  
 **TaskRef:** "LangDB custom reranker integration on Railway + Cursor MCP end‑to‑end validation"
 
