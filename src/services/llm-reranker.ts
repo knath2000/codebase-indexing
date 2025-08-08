@@ -1,5 +1,6 @@
 import { OpenAI } from 'openai';
 import type { Config } from '../types.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 interface SearchResult {
   chunkId: string;
@@ -22,6 +23,7 @@ export class LLMRerankerService {
   private totalRequests: number = 0;
   private maxDurationsToStore: number = 100; // Store up to 100 durations
   private client: OpenAI | undefined;
+  private readonly log = createModuleLogger('llm-reranker')
 
   constructor(config: Config) {
     this.apiKey = config.llmRerankerApiKey || undefined;
@@ -39,10 +41,7 @@ export class LLMRerankerService {
         timeout: this.timeoutMs
       });
 
-      console.log(`[LLMRerankerService] Initialized with OpenAI SDK`);
-      console.log(`[LLMRerankerService] Model: ${this.model}`);
-      console.log(`[LLMRerankerService] Base URL: ${baseUrl || 'https://api.openai.com/v1'}`);
-      console.log(`[LLMRerankerService] Timeout: ${this.timeoutMs}ms`);
+      this.log.info({ model: this.model, baseUrl: baseUrl || 'https://api.openai.com/v1', timeoutMs: this.timeoutMs }, 'LLMReranker initialized')
     }
   }
 
@@ -55,17 +54,17 @@ export class LLMRerankerService {
     this.totalRequests++;
 
     if (!this.enabled || !this.client) {
-      console.log('[LLMReranker] Re-ranking disabled or not configured, returning original results');
+      this.log.debug('Re-ranking disabled or not configured; returning original results')
       return { results: searchResults.slice(0, limit), reranked: false };
     }
 
     if (searchResults.length <= 1) {
-      console.log('[LLMReranker] Only 1 or fewer results, skipping re-ranking');
+      this.log.debug('Only 1 or fewer results; skipping re-ranking')
       return { results: searchResults, reranked: false };
     }
 
     try {
-      console.log(`[LLMReranker] Re-ranking ${searchResults.length} results for query: "${query}"`);
+      this.log.debug({ count: searchResults.length }, 'Re-ranking candidates')
       
       const prompt = this.buildReRankingPrompt(query, searchResults);
       const rankedIndices = await this.callLLMAPI(prompt);
@@ -75,17 +74,15 @@ export class LLMRerankerService {
       
       const duration = Date.now() - startTime;
       this.recordDuration(duration);
-      
-      console.log(`[LLMReranker] Re-ranking completed successfully in ${duration}ms`);
+      this.log.info({ durationMs: duration, count: searchResults.length }, 'Re-ranking completed')
       return { results: rerankedResults, reranked: true };
       
     } catch (error) {
       this.errorCount++;
       const duration = Date.now() - startTime;
       this.recordDuration(duration);
-      
-      console.error(`[LLMReranker] Re-ranking failed after ${duration}ms:`, error);
-      console.log('[LLMReranker] Falling back to original results');
+
+      this.log.warn({ durationMs: duration, err: error }, 'Re-ranking failed; falling back to original results')
       return { results: searchResults.slice(0, limit), reranked: false };
     }
   }
@@ -95,15 +92,16 @@ export class LLMRerankerService {
       throw new Error('OpenAI client not initialized');
     }
 
-    console.log(`[LLMReranker] Calling ${this.model} via OpenAI SDK...`);
+    this.log.debug({ model: this.model }, 'Calling LLM via OpenAI SDK')
     
     try {
       const response = await this.client.chat.completions.create({
         model: this.model,
+        response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful assistant that ranks search results based on relevance to a query. You must respond with valid JSON only.'
+            content: 'You are a helpful assistant that ranks search results based on relevance to a query. You must respond with valid JSON only. Output strictly valid JSON.'
           },
           {
             role: 'user',
@@ -118,22 +116,19 @@ export class LLMRerankerService {
       if (!content) {
         throw new Error('No content in LLM response');
       }
-
-      console.log(`[LLMReranker] Raw LLM response: ${content}`);
-      
-      // Parse the JSON response
-      const parsed = JSON.parse(content);
+      // Be tolerant to fenced code blocks from some providers
+      const jsonText = content.trim().replace(/^```json\s*|```$/g, '')
+      const parsed = JSON.parse(jsonText);
       const rankedIndices = parsed.rankedIndices || parsed.ranking || parsed.indices;
       
       if (!Array.isArray(rankedIndices)) {
         throw new Error('LLM response does not contain a valid rankedIndices array');
       }
-
-      console.log(`[LLMReranker] Parsed ranking: [${rankedIndices.join(', ')}]`);
+      this.log.debug({ rankedCount: rankedIndices.length }, 'Parsed ranking indices')
       return rankedIndices;
       
     } catch (error: any) {
-      console.error(`[LLMReranker] OpenAI SDK error:`, error.message);
+      this.log.warn({ err: error }, 'LLM API error')
       throw error;
     }
   }
@@ -171,7 +166,7 @@ Include ALL indices from 0 to ${results.length - 1} in your ranking.`;
       );
 
       if (validIndices.length === 0) {
-        console.warn('[LLMReranker] No valid indices in ranking, using original order');
+        this.log.warn('No valid indices in ranking; using original order')
         return originalResults.slice(0, limit);
       }
 
@@ -183,11 +178,11 @@ Include ALL indices from 0 to ${results.length - 1} in your ranking.`;
       const missingResults = originalResults.filter((_, idx) => !usedIndices.has(idx));
       rerankedResults.push(...missingResults);
 
-      console.log(`[LLMReranker] Applied ranking: ${validIndices.slice(0, 5).join(', ')}${validIndices.length > 5 ? '...' : ''}`);
+      this.log.debug({ sample: validIndices.slice(0, 5) }, 'Applied ranking order')
       return rerankedResults.slice(0, limit);
       
     } catch (error) {
-      console.error('[LLMReranker] Error applying ranking:', error);
+      this.log.error({ err: error }, 'Error applying ranking')
       return originalResults.slice(0, limit);
     }
   }

@@ -1,18 +1,22 @@
 import axios, { AxiosInstance } from 'axios';
 import { VoyageEmbeddingRequest, VoyageEmbeddingResponse } from '../types.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class VoyageClient {
   private client: AxiosInstance;
-  private baseURL: string = 'https://api.voyageai.com/v1';
+  private baseURL: string;
+  private readonly log = createModuleLogger('voyage-client')
 
   constructor(apiKey: string) {
+    this.baseURL = process.env.VOYAGE_API_BASE_URL || 'https://api.voyageai.com/v1'
+    const timeoutMs = parseInt(process.env.VOYAGE_TIMEOUT_MS || '', 10) || 30000
     this.client = axios.create({
       baseURL: this.baseURL,
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 30000
+      timeout: timeoutMs
     });
   }
 
@@ -32,6 +36,7 @@ export class VoyageClient {
       output_dimension: this.getEmbeddingDimension(model)  // Specify the dimension we want
     };
 
+    const start = Date.now()
     try {
       const response = await this.client.post<VoyageEmbeddingResponse>('/embeddings', request);
       
@@ -39,21 +44,23 @@ export class VoyageClient {
         throw new Error('No embeddings returned from Voyage AI');
       }
 
-      return response.data.data.map(item => item.embedding);
+      const embeddings = response.data.data.map(item => item.embedding);
+      this.log.debug({ model, inputType, count: Array.isArray(input) ? input.length : 1, ms: Date.now() - start }, 'Voyage embeddings OK')
+      return embeddings;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        console.error('Voyage AI API Error Details:', {
+        this.log.warn({
           status: error.response?.status,
           statusText: error.response?.statusText,
-          data: error.response?.data,
-          headers: error.response?.headers,
-          requestData: request,
-          requestHeaders: this.client.defaults.headers
-        });
+          code: error.code,
+          ms: Date.now() - start,
+          model,
+          inputType
+        }, 'Voyage embeddings error')
         const errorMessage = error.response?.data?.error?.message || error.response?.data?.message || error.message;
         throw new Error(`Voyage AI API error (${error.response?.status}): ${errorMessage}`);
       }
-      console.error('Non-Axios error in Voyage client:', error);
+      this.log.error({ err: error }, 'Non-Axios error in Voyage client');
       throw error;
     }
   }
@@ -118,12 +125,12 @@ export class VoyageClient {
    */
   async testConnection(): Promise<boolean> {
     try {
-      console.log('Testing Voyage AI connection...');
+      this.log.info('Testing Voyage AI connection...')
       const result = await this.generateEmbedding('test connection', 'voyage-code-3');
-      console.log('Voyage AI connection test successful, embedding dimension:', result.length);
+      this.log.info({ dim: result.length }, 'Voyage AI connection test successful')
       return true;
     } catch (error) {
-      console.error('Voyage AI connection test failed:', error);
+      this.log.error({ err: error }, 'Voyage AI connection test failed')
       return false;
     }
   }
