@@ -46,6 +46,9 @@ export const ConfigSchema = z.object({
   searchCacheTTL: z.number().default(300), // 5 minutes
   searchCacheMaxSize: z.number().default(500),
   contextWindowSize: z.number().default(32000), // tokens
+  contextReservedTokens: z.number().default(2000),
+  contextCharsPerToken: z.number().default(4),
+  contextGroupGapLines: z.number().default(10),
   maxContextChunks: z.number().default(20),
   hybridSearchAlpha: z.number().default(0.7), // weight for dense vs sparse
   fileWatchDebounceMs: z.number().default(1000),

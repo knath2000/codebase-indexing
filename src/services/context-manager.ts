@@ -9,12 +9,19 @@ import {
 
 export class ContextManagerService {
   private tokenBudget: TokenBudget;
+  private readonly reservedTokens: number;
+  private readonly charsPerToken: number;
+  private readonly groupGapLines: number;
 
   constructor(config: Config) {
+    this.reservedTokens = (config as any).contextReservedTokens ?? 2000;
+    this.charsPerToken = (config as any).contextCharsPerToken ?? 4;
+    this.groupGapLines = (config as any).contextGroupGapLines ?? 10;
+
     this.tokenBudget = {
       total: config.contextWindowSize,
-      reserved: 2000, // Reserve tokens for system prompts, etc.
-      available: config.contextWindowSize - 2000,
+      reserved: this.reservedTokens,
+      available: config.contextWindowSize - this.reservedTokens,
       used: 0
     };
   }
@@ -105,9 +112,9 @@ export class ContextManagerService {
       return false;
     }
 
-    // Check if chunks are close to each other (within 10 lines)
+    // Check if chunks are close to each other (within configured gap)
     const gap = current.chunk.startLine - previous.chunk.endLine;
-    return gap >= 0 && gap <= 10;
+    return gap >= 0 && gap <= this.groupGapLines;
   }
 
   /**
@@ -183,9 +190,8 @@ export class ContextManagerService {
    * This is a rough approximation - in production, use a proper tokenizer
    */
   private estimateTokens(text: string): number {
-    // Rough approximation: 1 token ≈ 4 characters for code
-    // This varies by language and tokenizer, but gives a reasonable estimate
-    return Math.ceil(text.length / 3.5);
+    // Rough approximation: configurable chars-per-token for code
+    return Math.ceil(text.length / Math.max(1, this.charsPerToken));
   }
 
   /**
