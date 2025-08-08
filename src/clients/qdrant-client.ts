@@ -1,5 +1,6 @@
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { EmbeddingVector, EmbeddingPayload, SearchQuery, SearchResult, CodeChunk } from '../types.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class QdrantVectorClient {
   private client: QdrantClient;
@@ -11,6 +12,7 @@ export class QdrantVectorClient {
   private keywordMaxChunks: number;
   private requestDurations: number[] = []; // To store last N request durations
   private maxDurationsToStore: number = 100; // Store up to 100 durations
+  private readonly log = createModuleLogger('qdrant-client')
 
   constructor(
     url: string,
@@ -49,7 +51,7 @@ export class QdrantVectorClient {
             distance: 'Cosine'
           }
         });
-        console.log(`Created collection: ${this.collectionName}`);
+        this.log.info({ collection: this.collectionName }, 'Created collection')
         
         // Create payload indexes for filtering capabilities
         await this.createPayloadIndexes();
@@ -59,11 +61,10 @@ export class QdrantVectorClient {
         const existingDimensions = collectionInfo.config?.params?.vectors?.size;
         
         if (existingDimensions !== this.embeddingDimension) {
-          console.log(`⚠️  Collection exists but has wrong dimensions: ${existingDimensions}, expected: ${this.embeddingDimension}`);
-          console.log(`🔄 Recreating collection with correct dimensions...`);
+          this.log.warn({ existingDimensions, expected: this.embeddingDimension, collection: this.collectionName }, 'Collection has wrong dimensions; recreating')
           await this.recreateCollection();
         } else {
-          console.log(`✅ Collection exists with correct dimensions: ${this.embeddingDimension}`);
+          this.log.info({ dim: this.embeddingDimension, collection: this.collectionName }, 'Collection exists with correct dimensions')
           // Ensure payload indexes exist (idempotent operation)
           await this.createPayloadIndexes();
         }
@@ -78,21 +79,21 @@ export class QdrantVectorClient {
    */
   async recreateCollection(): Promise<void> {
     try {
-      console.log(`🗑️  Deleting existing collection: ${this.collectionName}`);
+      this.log.warn({ collection: this.collectionName }, 'Deleting existing collection')
       
       // Delete existing collection
       try {
         await this.client.deleteCollection(this.collectionName);
-        console.log(`✅ Deleted existing collection`);
+        this.log.info('Deleted existing collection')
       } catch (deleteError) {
-        console.log(`⚠️  Collection deletion failed (might not exist): ${deleteError}`);
+        this.log.warn({ err: String(deleteError) }, 'Collection deletion failed (might not exist)')
       }
 
       // Wait a moment for deletion to complete
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Create new collection with correct dimensions
-      console.log(`🎯 Creating new collection with ${this.embeddingDimension} dimensions`);
+      this.log.info({ dim: this.embeddingDimension, collection: this.collectionName }, 'Creating new collection')
       await this.client.createCollection(this.collectionName, {
         vectors: {
           size: this.embeddingDimension,
@@ -100,7 +101,7 @@ export class QdrantVectorClient {
         }
       });
       
-      console.log(`✅ Successfully recreated collection: ${this.collectionName}`);
+      this.log.info({ collection: this.collectionName }, 'Successfully recreated collection')
       
       // Create payload indexes for filtering capabilities
       await this.createPayloadIndexes();
@@ -114,7 +115,7 @@ export class QdrantVectorClient {
    * Create payload indexes for filtering capabilities (matching Cursor's @codebase functionality)
    */
   private async createPayloadIndexes(): Promise<void> {
-    console.log(`🔧 [Qdrant] Creating payload indexes for enhanced filtering...`);
+    this.log.info({ collection: this.collectionName }, 'Creating payload indexes for filtering')
     
     try {
       // Index for chunkType filtering (function, class, interface, etc.)
@@ -122,38 +123,38 @@ export class QdrantVectorClient {
         field_name: 'chunkType',
         field_schema: 'keyword'
       });
-      console.log(`✅ [Qdrant] Created chunkType index for filtering by code elements`);
+      this.log.info('Created chunkType index')
       
       // Index for language filtering (typescript, javascript, etc.)
       await this.client.createPayloadIndex(this.collectionName, {
         field_name: 'language',
         field_schema: 'keyword'
       });
-      console.log(`✅ [Qdrant] Created language index for filtering by programming language`);
+      this.log.info('Created language index')
       
       // Index for filePath filtering
       await this.client.createPayloadIndex(this.collectionName, {
         field_name: 'filePath',
         field_schema: 'keyword'
       });
-      console.log(`✅ [Qdrant] Created filePath index for file-specific searches`);
+      this.log.info('Created filePath index')
       
       // Index for fileKind filtering (code vs docs)
       await this.client.createPayloadIndex(this.collectionName, {
         field_name: 'fileKind',
         field_schema: 'keyword'
       });
-      console.log(`✅ [Qdrant] Created fileKind index for distinguishing code vs documentation`);
+      this.log.info('Created fileKind index')
       
-      console.log(`🎉 [Qdrant] All payload indexes created successfully - collection ready for @codebase-style filtered searches!`);
+      this.log.info('All payload indexes created successfully')
       
     } catch (error) {
       // Check if indexes already exist (this is not an error)
       const errorMsg = String(error).toLowerCase();
       if (errorMsg.includes('already exists') || errorMsg.includes('conflict')) {
-        console.log(`ℹ️  [Qdrant] Payload indexes already exist, skipping creation`);
+        this.log.info('Payload indexes already exist, skipping creation')
       } else {
-        console.error(`❌ [Qdrant] Failed to create payload indexes:`, error);
+        this.log.error({ err: error }, 'Failed to create payload indexes')
         throw new Error(`Failed to create payload indexes: ${error}`);
       }
     }
@@ -171,16 +172,16 @@ export class QdrantVectorClient {
    * Store embedding vectors in Qdrant
    */
   async storeEmbeddings(embeddings: EmbeddingVector[]): Promise<void> {
-    console.log(`🚀 [Qdrant] Starting to store ${embeddings.length} embeddings`);
+    this.log.info({ count: embeddings.length }, 'Storing embeddings')
 
     // Early-exit
     if (embeddings.length === 0) {
-      console.log('ℹ️  [Qdrant] No embeddings to store – skipping');
+      this.log.info('No embeddings to store – skipping')
       return;
     }
 
     // Verify connection once
-    console.log('🔗 [Qdrant] Verifying connection...');
+    this.log.debug('Verifying connection')
     if (!(await this.testConnection())) {
       throw new Error('Qdrant connection test failed');
     }
@@ -213,15 +214,15 @@ export class QdrantVectorClient {
         });
         const dur = Date.now() - start;
         stored += batch.length;
-        console.log(`✅ [Qdrant] Upserted batch (${batch.length}) – total stored so far: ${stored}/${embeddings.length} in ${dur}ms`);
+        this.log.debug({ batch: batch.length, stored, total: embeddings.length, ms: dur }, 'Upserted batch')
       }
 
       // Final verification (may lag slightly because wait=false)
       const finalInfo = await this.getCollectionInfo();
-      console.log(`📊 [Qdrant] Collection now reports ${finalInfo.points_count || 0} points`);
+      this.log.info({ points: finalInfo.points_count || 0 }, 'Collection points updated')
 
     } catch (err) {
-      console.error('❌ [Qdrant] storeEmbeddings failed:', err);
+      this.log.error({ err }, 'storeEmbeddings failed')
       throw err;
     }
   }
@@ -240,15 +241,7 @@ export class QdrantVectorClient {
     query: SearchQuery,
     queryVector: number[]
   ): Promise<SearchResult[]> {
-    console.log(`🔍 [Qdrant] Starting search with query: "${query.query}"`);
-    console.log(`🔍 [Qdrant] Search parameters:`, {
-      limit: query.limit || 50, // Increased from 10 to 50 for better coverage
-      threshold: query.threshold ?? 0.25,
-      language: query.language,
-      filePath: query.filePath,
-      chunkType: query.chunkType,
-      vectorLength: queryVector.length
-    });
+    this.log.debug({ q: query.query, limit: query.limit || 50, threshold: query.threshold ?? 0.25, lang: query.language, filePath: query.filePath, chunkType: query.chunkType, vecLen: queryVector.length }, 'Starting dense search')
 
     try {
       // Validate input parameters
@@ -269,57 +262,31 @@ export class QdrantVectorClient {
       };
 
       // Build filters based on query parameters
-      const filterConditions: any[] = [];
-      
-      if (query.language) {
-        filterConditions.push({ key: 'language', match: { value: query.language } });
-        console.log(`🔍 [Qdrant] Adding language filter: ${query.language}`);
-      }
-      
-      if (query.filePath) {
-        filterConditions.push({ key: 'filePath', match: { value: query.filePath } });
-        console.log(`🔍 [Qdrant] Adding file path filter: ${query.filePath}`);
-      }
-      
-      if (query.chunkType) {
-        filterConditions.push({ key: 'chunkType', match: { value: query.chunkType } });
-        console.log(`🔍 [Qdrant] Adding chunk type filter: ${query.chunkType}`);
-      }
+      const filter = this.buildFilterFromQuery(query)
+      if (filter) searchParams.filter = filter
 
-      // Add fileKind filter when preferImplementation is true
-      if (query.preferImplementation === true) {
-        filterConditions.push({ key: 'fileKind', match: { value: 'code' } });
-        console.log(`🔍 [Qdrant] Adding fileKind filter: code (prefer implementation)`);
-      }
-
-      if (filterConditions.length > 0) {
-        searchParams.filter = { must: filterConditions };
-        console.log(`🔍 [Qdrant] Applied ${filterConditions.length} filter(s)`);
-      }
-
-      console.log(`🔍 [Qdrant] Executing search in collection: ${this.collectionName}`);
+      this.log.debug({ collection: this.collectionName }, 'Executing dense search')
       const searchResult = await this.client.search(this.collectionName, searchParams);
       
-      console.log(`✅ [Qdrant] Search completed successfully, found ${searchResult.length} results`);
+      this.log.debug({ results: searchResult.length }, 'Dense search complete')
 
-      const results = searchResult.map(result => {
-        const chunk = this.payloadToCodeChunk(result.payload as unknown as EmbeddingPayload);
-        chunk.id = result.id as string; // Set the ID from the search result
-        
+      const results = searchResult.map(r => {
+        const chunk = this.payloadToCodeChunk(r.payload as unknown as EmbeddingPayload)
+        chunk.id = r.id as string
         return {
-          id: result.id as string,
-          score: result.score,
+          id: r.id as string,
+          score: r.score,
           chunk,
-          snippet: this.createSnippet(result.payload as unknown as EmbeddingPayload),
-          context: this.createContextDescription(result.payload as unknown as EmbeddingPayload)
-        };
-      });
+          snippet: this.createSnippet(r.payload as unknown as EmbeddingPayload),
+          context: this.createContextDescription(r.payload as unknown as EmbeddingPayload)
+        }
+      })
 
-      console.log(`🔍 [Qdrant] Returning ${results.length} processed results`);
+      this.log.debug({ results: results.length }, 'Returning dense results')
       return results;
 
     } catch (error) {
-      console.error(`❌ [Qdrant] Search failed:`, error);
+      this.log.error({ err: error }, 'Dense search failed')
       if (error instanceof Error) {
         // Enhance error message with more context
         throw new Error(`Qdrant search failed: ${error.message} (Collection: ${this.collectionName}, Query: "${query.query}")`);
@@ -368,17 +335,17 @@ export class QdrantVectorClient {
         });
         scanned += page.points.length;
         if (Date.now() - startTime > this.keywordTimeoutMs) {
-          console.warn(`[Qdrant] keywordSearch timeout after ${this.keywordTimeoutMs} ms, stopping scroll early (scanned ${scanned} points)`);
+          this.log.warn({ timeoutMs: this.keywordTimeoutMs, scanned }, 'keywordSearch timeout; stopping scroll')
           break;
         }
         if (scanned >= this.keywordMaxChunks) {
-          console.warn(`[Qdrant] keywordSearch reached max chunk limit (${this.keywordMaxChunks}), stopping scroll`);
+          this.log.warn({ limit: this.keywordMaxChunks }, 'keywordSearch reached max chunk limit; stopping scroll')
           break;
         }
         offset = page.next_page_offset as string | undefined;
       } while (offset !== undefined);
     } catch (error) {
-      console.error('[Qdrant] keywordSearch scroll failed:', error);
+      this.log.error({ err: error }, 'keywordSearch scroll failed')
       return [];
     }
 
@@ -509,7 +476,7 @@ export class QdrantVectorClient {
       });
       return response;
     } catch (error) {
-      console.error(`❌ [Qdrant] Failed to retrieve points by ID:`, error);
+      this.log.error({ err: error }, 'Failed to retrieve points by ID')
       throw new Error(`Qdrant getPointsById failed: ${String(error)}`);
     }
   }
@@ -536,7 +503,7 @@ export class QdrantVectorClient {
       this.addRequestDuration(duration);
       return true;
     } catch (error) {
-      console.error('Qdrant connection test failed:', error);
+      this.log.error({ err: error }, 'Qdrant connection test failed')
       return false;
     }
   }
@@ -678,5 +645,14 @@ export class QdrantVectorClient {
       score += occurrences;
     }
     return score;
+  }
+
+  private buildFilterFromQuery(query: SearchQuery): any | undefined {
+    const must: any[] = []
+    if (query.language) must.push({ key: 'language', match: { value: query.language } })
+    if (query.filePath) must.push({ key: 'filePath', match: { value: query.filePath } })
+    if (query.chunkType) must.push({ key: 'chunkType', match: { value: query.chunkType } })
+    if (query.preferImplementation === true) must.push({ key: 'fileKind', match: { value: 'code' } })
+    return must.length > 0 ? { must } : undefined
   }
 } 

@@ -5,6 +5,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
+import { createModuleLogger } from './logging/logger.js'
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
 import { HealthMonitorService } from './services/health-monitor.js';
@@ -25,6 +26,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const app = express();
+const log = createModuleLogger('http-server')
 const port = parseInt(process.env.PORT || '3001', 10);
 
 // Middleware
@@ -168,21 +170,21 @@ const activeSessions = new Map<string, {
 async function initializeMcpServer() {
   if (mcpServer && mcpClient) return;
 
-  console.log('diag: 1. Starting initialization');
+  log.debug('diag: 1. Starting initialization');
   const config = loadConfig();
-  console.log('diag: 2. Config loaded');
+  log.debug('diag: 2. Config loaded');
   validateConfig(config);
-  console.log('diag: 3. Config validated');
+  log.debug('diag: 3. Config validated');
 
   // Create shared workspace manager
   workspaceManager = new WorkspaceManager();
-  console.log('diag: 4. WorkspaceManager created');
+  log.debug('diag: 4. WorkspaceManager created');
 
   // Create services but don't initialize them yet (with shared workspace manager)
   indexingService = new IndexingService(config, workspaceManager);
-  console.log('diag: 5. IndexingService created');
+  log.debug('diag: 5. IndexingService created');
   searchService = new SearchService(config, workspaceManager);
-  console.log('diag: 6. SearchService created');
+  log.debug('diag: 6. SearchService created');
   // Create health monitor (will be started after initialize())
   const voyageClient = new VoyageClient(config.voyageApiKey)
   const qdrantClient = new QdrantVectorClient(
@@ -205,19 +207,19 @@ async function initializeMcpServer() {
       },
     }
   );
-  console.log('diag: 7. MCP Server object created');
+  log.debug('diag: 7. MCP Server object created');
 
   // Setup MCP tools (register handlers on the server)
   setupMcpTools(mcpServer, indexingService, searchService, healthMonitor || undefined);
-  console.log('diag: 8. MCP tools setup');
+  log.debug('diag: 8. MCP tools setup');
 
   // Wire up an in-memory transport so we can invoke tool handlers locally via a client instance.
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  console.log('diag: 9. In-memory transport created');
+  log.debug('diag: 9. In-memory transport created');
 
   // Connect server side of the transport
   await mcpServer.connect(serverTransport);
-  console.log('diag: 10. MCP Server connected to transport');
+  log.debug('diag: 10. MCP Server connected to transport');
 
   // Create an internal client with minimal capabilities (just tools)
   mcpClient = new Client(
@@ -231,19 +233,19 @@ async function initializeMcpServer() {
       },
     }
   );
-  console.log('diag: 11. MCP Client object created');
+  log.debug('diag: 11. MCP Client object created');
 
   await mcpClient.connect(clientTransport);
-  console.log('diag: 12. MCP Client connected to transport');
+  log.debug('diag: 12. MCP Client connected to transport');
 
-  console.log('MCP server and internal client initialized (in-memory transport)');
+  log.info('MCP server and internal client initialized (in-memory transport)');
 }
 
 // Initialize services lazily (on first tool use)
 async function ensureServicesInitialized(): Promise<void> {
   if (servicesInitialized || !indexingService || !searchService) return;
   
-  console.log('🔧 Initializing services...');
+  log.info('🔧 Initializing services...');
   
   try {
     // Initialize services with network calls
@@ -256,11 +258,11 @@ async function ensureServicesInitialized(): Promise<void> {
     setupWorkspaceWatcher();
     
     servicesInitialized = true;
-    console.log('✅ Services initialized successfully');
-    console.log('🔍 Auto-indexing: Enabled');
-    console.log('👁️  File watching: Active');
+    log.info('✅ Services initialized successfully');
+    log.info('🔍 Auto-indexing: Enabled');
+    log.info('👁️  File watching: Active');
   } catch (error) {
-    console.error('❌ Failed to initialize services:', error);
+    log.error({ err: error }, '❌ Failed to initialize services');
     throw error;
   }
 }
@@ -272,28 +274,27 @@ async function ensureWorkspaceIndexed(): Promise<void> {
   if (!indexingService) return;
   
   try {
-    console.log('🔍 Checking if workspace is already indexed...');
+    log.info('🔍 Checking if workspace is already indexed...');
     const existingChunks = await indexingService.countIndexedChunks();
     const workspaceDir = process.cwd();
     
     if (existingChunks === 0) {
-      console.log('📁 No existing index detected – automatically indexing workspace...');
-      console.log(`📂 Indexing directory: ${workspaceDir}`);
+      log.info('📁 No existing index detected – automatically indexing workspace...');
+      log.info({ workspaceDir }, '📂 Indexing directory');
       
       const startTime = Date.now();
       await indexingService.indexDirectory(workspaceDir);
       const duration = Date.now() - startTime;
       
       const finalCount = await indexingService.countIndexedChunks();
-      console.log(`✅ Workspace indexing completed in ${duration}ms`);
-      console.log(`📊 Indexed ${finalCount} code chunks`);
+      log.info({ durationMs: duration, finalCount }, '✅ Workspace indexing completed')
     } else {
-      console.log(`✅ Found existing index with ${existingChunks} code chunks`);
-      console.log('🔄 Workspace is ready - file watcher will handle incremental updates');
+      log.info({ existingChunks }, '✅ Found existing index')
+      log.info('🔄 Workspace is ready - file watcher will handle incremental updates')
     }
   } catch (error) {
-    console.error('❌ Error during workspace indexing:', error);
-    console.error('⚠️  Server will continue but workspace may not be fully indexed');
+    log.error({ err: error }, '❌ Error during workspace indexing')
+    log.warn('⚠️  Server will continue but workspace may not be fully indexed')
     // Don't throw - allow server to start even if auto-indexing fails
   }
 }
@@ -315,11 +316,11 @@ function setupWorkspaceWatcher(): void {
       config.excludePatterns
     );
     
-    console.log('👁️  Starting workspace file watcher for real-time updates...');
+    log.info('👁️  Starting workspace file watcher for real-time updates...');
     workspaceWatcher.start();
   } catch (error) {
-    console.error('❌ Error setting up workspace watcher:', error);
-    console.error('⚠️  File watching disabled - manual reindexing will be required');
+    log.error({ err: error }, '❌ Error setting up workspace watcher')
+    log.warn('⚠️  File watching disabled - manual reindexing will be required')
   }
 }
 
@@ -725,14 +726,14 @@ async function startServer() {
     await initializeMcpServer();
     
     app.listen(port, '0.0.0.0', () => {
-      console.log(`🚀 MCP Codebase Indexing Server running on port ${port}`);
-      console.log(`📡 MCP endpoint: http://localhost:${port}/mcp`);
-      console.log(`💚 Health check: http://localhost:${port}/health`);
+      log.info({ port }, '🚀 MCP Codebase Indexing Server running')
+      log.info({ endpoint: `/mcp` }, '📡 MCP endpoint ready')
+      log.info({ endpoint: `/health` }, '💚 Health check ready')
     });
 
     // Add a keepalive log to diagnose premature exit
     setInterval(() => {
-      console.log('❤️ Server process is still alive...');
+      log.debug('❤️ Server process is still alive...');
     }, 2000);
     
   } catch (error) {

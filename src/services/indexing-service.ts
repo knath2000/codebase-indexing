@@ -146,7 +146,7 @@ export class IndexingService extends EventEmitter {
       this.emit('progress', this.progress);
 
       // Process files in batches
-      const batchSize = 10;
+      const batchSize = 10; // TODO: make configurable if needed
       const allChunks: CodeChunk[] = [];
       console.log(`📁 Processing ${files.length} files in batches of ${batchSize}`);
 
@@ -357,7 +357,7 @@ export class IndexingService extends EventEmitter {
       return ext && this.config.supportedExtensions.includes(`.${ext}`);
     });
 
-    console.log(`📝 ${supportedFiles.length} files have supported extensions`);
+       console.log(`📝 ${supportedFiles.length} files have supported extensions`);
 
     // Filter by file size and binary content
     const validFiles: string[] = [];
@@ -531,7 +531,7 @@ export class IndexingService extends EventEmitter {
     this.progress.status = IndexingStatus.STORING;
     this.emit('progress', this.progress);
 
-    const storeBatchSize = 100;
+    const storeBatchSize = 100; // TODO: make configurable if needed
     console.log(`📦 Storing in batches of ${storeBatchSize}`);
     
     for (let i = 0; i < embeddings.length; i += storeBatchSize) {
