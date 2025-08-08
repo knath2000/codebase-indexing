@@ -295,6 +295,20 @@ export const TOOL_DEFINITIONS = [
     }
   },
   {
+    name: 'detect_and_switch_workspace',
+    description: 'Detect a workspace at a given path, register it, switch to it, ensure collection exists, and optionally auto-index it',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to the workspace root to detect and switch to'
+        }
+      },
+      required: ['path']
+    }
+  },
+  {
     name: 'get_workspace_info',
     description: 'Get information about the current workspace and detected project structure',
     inputSchema: {
@@ -717,6 +731,50 @@ export function setupMcpTools(
                     ``
             }]
           };
+        case 'detect_and_switch_workspace': {
+          const targetPath = args.path as string;
+          const wsManager = (indexingService as any).workspaceManager || (searchService as any).workspaceManager;
+          if (!wsManager) {
+            return {
+              content: [{ type: 'text', text: '❌ Workspace manager not available.' }],
+              isError: true
+            };
+          }
+          try {
+            // Detect/register workspace at provided path (emits workspace-changed)
+            const detected = await wsManager.detectCurrentWorkspace(targetPath);
+            // Ensure services are pointed at the new collection
+            if (indexingService && (indexingService as any).updateQdrantClientForWorkspace) {
+              (indexingService as any).updateQdrantClientForWorkspace(detected);
+              await (indexingService as any).qdrantClient.initializeCollection?.();
+            }
+            if (searchService && (searchService as any).updateQdrantClientForWorkspace) {
+              (searchService as any).updateQdrantClientForWorkspace(detected);
+              await (searchService as any).qdrantClient.initializeCollection?.();
+            }
+            // Optionally auto-index now (guarded by feature flag)
+            const shouldAuto = ((indexingService as any).config?.flags?.autoIndexOnConnect) === true;
+            if (shouldAuto) {
+              try {
+                await indexingService.indexDirectory(detected.rootPath);
+              } catch {}
+            }
+            return {
+              content: [{
+                type: 'text',
+                text: `✅ Detected and switched to workspace "${detected.name}"
+Path: ${detected.rootPath}
+Collection: ${detected.collectionName}
+Auto-index: ${shouldAuto ? 'triggered' : 'skipped'}`
+              }]
+            };
+          } catch (err: any) {
+            return {
+              content: [{ type: 'text', text: `❌ Failed to detect/switch workspace: ${err?.message || String(err)}` }],
+              isError: true
+            };
+          }
+        }
         case 'get_workspace_info':
           // Access the workspace manager from the service (if available)
           const currentWorkspace = (indexingService as any).currentWorkspace || (searchService as any).currentWorkspace;
