@@ -134,9 +134,10 @@ VOYAGE_API_KEY=your_key_here npm start
 ```
 
 3. **Connect to Cursor**:
-   - Add MCP server in Cursor settings
-   - Use server URL: `http://localhost:3001`
-    - You should see a green circle with tools available (see Tools section for the current list)
+   - Add MCP server in Cursor settings (Streamable HTTP)
+   - SSE URL: `http://localhost:3001/mcp` (Server-Sent Events)
+   - JSON-RPC URL (used internally): `http://localhost:3001/message`
+   - You should see a green circle with tools available (see Tools section)
 
 4. **Test it out**:
    - Index your codebase: "Index the current directory"  
@@ -700,8 +701,13 @@ const context = await searchService.getCodeContext('chunk_id', 5);
 # Test server is running
 curl http://localhost:3001/health
 
-# Test MCP endpoint
-curl http://localhost:3001/sse
+# Test MCP SSE endpoint
+curl -N http://localhost:3001/mcp
+
+# Test JSON-RPC endpoint
+curl -s http://localhost:3001/message \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
 # Check server logs
 npm start 2>&1 | tee server.log

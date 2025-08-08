@@ -12,6 +12,7 @@ import { QdrantVectorClient } from './clients/qdrant-client.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
+import { createModuleLogger } from './logging/logger.js'
 
 // Server configuration
 const SERVER_NAME = 'codebase-indexing-server';
@@ -872,6 +873,7 @@ class CodebaseIndexingServer {
   private workspaceDir: string;
   // Note: used for side effects via start(); referenced via this.healthMonitor in run()
   private healthMonitor?: HealthMonitorService;
+  private readonly log = createModuleLogger('stdio-server')
 
   constructor(config: Config) {
     this.server = new Server({
@@ -905,499 +907,16 @@ class CodebaseIndexingServer {
       config.excludePatterns
     );
 
-    this.setupToolHandlers();
+    // Register MCP tools on stdio server using shared setup
+    setupMcpTools(this.server, this.indexingService, this.searchService, this.healthMonitor);
   }
 
-  private setupToolHandlers(): void {
-    // List available tools
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: TOOL_DEFINITIONS
-      };
-    });
-
-    // Handle tool calls
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const { name, arguments: args } = request.params;
-
-      try {
-        switch (name) {
-          case 'index_directory':
-            return await this.handleIndexDirectory(args);
-          case 'index_file':
-            return await this.handleIndexFile(args);
-          case 'search_code':
-            return await this.handleSearchCode(args);
-          case 'search_functions':
-            return await this.handleSearchFunctions(args);
-          case 'search_classes':
-            return await this.handleSearchClasses(args);
-          case 'find_similar':
-            return await this.handleFindSimilar(args);
-          case 'get_code_context':
-            return await this.handleGetCodeContext(args);
-          case 'get_indexing_stats':
-            return await this.handleGetIndexingStats(args);
-          case 'get_search_stats':
-            return await this.handleGetSearchStats(args);
-          case 'clear_index':
-            return await this.handleClearIndex(args);
-          case 'remove_file':
-            return await this.handleRemoveFile(args);
-          case 'reindex_file':
-            return await this.handleReindexFile(args);
-          case 'create_payload_indexes':
-            return await this.handleCreatePayloadIndexes(args);
-          case 'codebase_search':
-            return await this.handleCodebaseSearch(args);
-          case 'get_health_status':
-            return await this.handleGetHealthStatus(args);
-          case 'get_enhanced_stats':
-            return await this.handleGetEnhancedStats(args);
-          case 'clear_search_cache':
-            return await this.handleClearSearchCache(args);
-          case 'invalidate_file_cache':
-            return await this.handleInvalidateFileCache(args);
-          default:
-            throw new Error(`Unknown tool: ${name}`);
-        }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: ${errorMessage}`
-            }
-          ]
-        };
-      }
-    });
-  }
-
-  private async handleIndexDirectory(args: any) {
-    const { directory_path } = args;
-    const stats = await this.indexingService.indexDirectory(directory_path);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Successfully indexed directory: ${directory_path}\n\n` +
-                `Statistics:\n` +
-                `- Total files: ${stats.totalFiles}\n` +
-                `- Total chunks: ${stats.totalChunks}\n` +
-                `- Total size: ${stats.totalSize} bytes\n` +
-                `- Average chunk size: ${Math.round(stats.averageChunkSize)} bytes\n` +
-                `- Indexing duration: ${stats.indexingDuration}ms\n` +
-                `- Errors: ${stats.errors}\n` +
-                `- Warnings: ${stats.warnings}\n\n` +
-                `Language distribution:\n${Object.entries(stats.languageDistribution)
-                  .map(([lang, count]) => `  ${lang}: ${count}`)
-                  .join('\n')}\n\n` +
-                `Chunk type distribution:\n${Object.entries(stats.chunkTypeDistribution)
-                  .map(([type, count]) => `  ${type}: ${count}`)
-                  .join('\n')}`
-        }
-      ]
-    };
-  }
-
-  private async handleIndexFile(args: any) {
-    const { file_path } = args;
-    const chunks = await this.indexingService.indexFile(file_path);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Successfully indexed file: ${file_path}\n` +
-                `Generated ${chunks.length} chunks\n\n` +
-                `Chunks:\n${chunks.map(chunk => 
-                  `- ${chunk.chunkType} (${chunk.startLine}-${chunk.endLine}): ${chunk.functionName || chunk.className || 'unnamed'}`
-                ).join('\n')}`
-        }
-      ]
-    };
-  }
-
-  private async handleSearchCode(args: any) {
-    const { query, language, chunk_type, file_path, limit, threshold, enable_hybrid, enable_reranking, llm_reranker_timeout_ms } = args;
-    
-    const searchQuery = this.searchService.buildSearchQuery({
-      query: query as string,
-      ...(language !== undefined ? { language: language as string } : {}),
-      ...(chunk_type !== undefined ? { chunkType: chunk_type as ChunkType } : {}),
-      ...(file_path !== undefined ? { filePath: file_path as string } : {}),
-      ...(limit !== undefined ? { limit: limit as number } : {}),
-      ...(threshold !== undefined ? { threshold: threshold as number } : {}),
-      ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
-      ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
-      ...(llm_reranker_timeout_ms !== undefined ? { llmRerankerTimeoutMs: llm_reranker_timeout_ms as number } : {}),
-    });
-
-    const results = await this.searchService.search(searchQuery);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Search results for "${query}":\n\n` +
-                results.map((result: any, index: number) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
-        }
-      ]
-    };
-  }
-
-  private async handleSearchFunctions(args: any) {
-    const { query, language, limit } = args;
-    const searchQuery = this.searchService.buildSearchQuery({
-      query: query as string,
-      ...(language !== undefined ? { language: language as string } : {}),
-      ...(limit !== undefined ? { limit: limit as number } : {}),
-      chunkType: ChunkType.FUNCTION,
-    });
-    const results = await this.searchService.searchFunctions(searchQuery);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Function search results for "${query}":\n\n` +
-                results.map((result: any, index: number) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.functionName || 'unnamed'}\n` +
-                         `   ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
-        }
-      ]
-    };
-  }
-
-  private async handleSearchClasses(args: any) {
-    const { query, language, limit } = args;
-    const searchQuery = this.searchService.buildSearchQuery({
-      query: query as string,
-      ...(language !== undefined ? { language: language as string } : {}),
-      ...(limit !== undefined ? { limit: limit as number } : {}),
-      chunkType: ChunkType.CLASS,
-    });
-    const results = await this.searchService.searchClasses(searchQuery);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Class search results for "${query}":\n\n` +
-                results.map((result: any, index: number) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.chunk.className || 'unnamed'}\n` +
-                         `   ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
-        }
-      ]
-    };
-  }
-
-  private async handleFindSimilar(args: any) {
-    const { chunk_id, limit } = args;
-    const searchQuery = this.searchService.buildSearchQuery({
-      query: chunk_id as string,
-      ...(limit !== undefined ? { limit: limit as number } : {}),
-    });
-    const results = await this.searchService.findSimilar(searchQuery);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Similar chunks to "${chunk_id}":\n\n` +
-                results.map((result: any, index: number) => 
-                  `${index + 1}. [Score: ${result.score.toFixed(3)}] ${result.context}\n` +
-                  `\`\`\`${result.chunk.language}\n${result.snippet}\n\`\`\``
-                ).join('\n\n')
-        }
-      ]
-    };
-  }
-
-  private async handleGetCodeContext(args: any) {
-    const { chunk_id, context_lines } = args;
-    const codeContextResult = await this.searchService.getCodeContext(
-      chunk_id as string,
-      context_lines as number | undefined
-    );
-    if (!codeContextResult) {
-      return {
-        content: [{
-            type: 'text',
-            text: `Chunk not found: ${chunk_id}`
-        }],
-        isError: true
-      };
-    }
-    return {
-      content: [{
-          type: 'text',
-          text: `Code context for chunk "${chunk_id}":\n\n` +
-              `File: ${codeContextResult.chunk.filePath}\n` +
-              `Lines: ${codeContextResult.chunk.startLine}-${codeContextResult.chunk.endLine}\n` +
-              `Type: ${codeContextResult.chunk.chunkType}\n\n` +
-              `\`\`\`${codeContextResult.chunk.language}\n${codeContextResult.context}\n\`\`\``
-      }]
-    };
-  }
-
-  private async handleGetIndexingStats(_args: any) {
-    const indexingStats = this.indexingService.getStats();
-    return {
-      content: [{
-          type: 'text',
-          text: `Indexing Statistics:\n\n` +
-              `Total files: ${indexingStats.totalFiles}\n` +
-              `Total chunks: ${indexingStats.totalChunks}\n` +
-              `Total size: ${indexingStats.totalSize} bytes\n` +
-              `Average chunk size: ${Math.round(indexingStats.averageChunkSize)} bytes\n` +
-              `Last indexed: ${indexingStats.lastIndexed.toISOString()}\n` +
-              `Indexing duration: ${indexingStats.indexingDuration}ms\n` +
-              `Errors: ${indexingStats.errors}\n` +
-              `Warnings: ${indexingStats.warnings}\n` +
-              `Largest file: ${indexingStats.largestFile}\n\n` +
-              `Language distribution:\n${Object.entries(indexingStats.languageDistribution)
-                  .map(([lang, count]) => `  ${lang}: ${count}`)
-                  .join('\n')}\n\n` +
-              `Chunk type distribution:\n${Object.entries(indexingStats.chunkTypeDistribution)
-                  .map(([type, count]) => `  ${type}: ${count}`)
-                  .join('\n')}`
-      }]
-    };
-  }
-
-  private async handleGetSearchStats(_args: any) {
-    const searchStats = await this.searchService.getSearchStats();
-    const languageStats = Object.entries(searchStats.topLanguages)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
-      .map(([lang, count]) => `  • ${lang}: ${count} chunks`)
-      .join('\n');
-    const chunkTypeStats = Object.entries(searchStats.topChunkTypes)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
-      .map(([type, count]) => `  • ${type}: ${count} chunks`)
-      .join('\n');
-    return {
-      content: [{
-          type: 'text',
-        text: `Search Statistics:\n\n` +
-              `Total queries: ${searchStats.totalQueries}\n` +
-              `Average latency: ${searchStats.averageLatency.toFixed(2)}ms\n` +
-              `Cache hit rate: ${searchStats.cacheHitRate.toFixed(2)}%\n` +
-              `Hybrid search usage: ${searchStats.hybridSearchUsage.toFixed(2)}%\n` +
-              `LLM reranker usage: ${searchStats.llmRerankerUsage.toFixed(2)}%\n` +
-              `Error rate: ${searchStats.errorRate.toFixed(2)}%\n` +
-              `Last query: ${searchStats.lastQuery?.toISOString() || 'N/A'}\n\n` +
-              `Top Languages:\n${languageStats}\n\n` +
-              `Top Chunk Types:\n${chunkTypeStats}`
-      }]
-    };
-  }
-
-  private async handleClearIndex(_args: any) {
-    await this.indexingService.clearIndex();
-    return {
-      content: [{
-          type: 'text',
-        text: 'Successfully cleared index'
-      }]
-    };
-  }
-
-  private async handleRemoveFile(args: any) {
-    await this.indexingService.removeFile(args.file_path as string);
-    return {
-      content: [{
-          type: 'text',
-        text: `Successfully removed file: ${args.file_path}`
-      }]
-    };
-  }
-
-  private async handleReindexFile(args: any) {
-    const reindexedChunks = await this.indexingService.reindexFile(args.file_path as string);
-    return {
-      content: [{
-          type: 'text',
-        text: `Successfully re-indexed file: ${args.file_path}\nGenerated ${reindexedChunks.length} chunks`
-      }]
-    };
-  }
-
-  private async handleCreatePayloadIndexes(_args: any) {
-    await (this.searchService as any).qdrantClient.ensurePayloadIndexes(_args.force as boolean || false);
-    return {
-      content: [{
-          type: 'text',
-        text: 'Successfully created payload indexes'
-      }]
-    };
-  }
-
-  private async handleCodebaseSearch(args: any) {
-    const { query, language, chunk_type, file_path, limit, max_tokens, enable_hybrid, enable_reranking, prefer_implementation } = args;
-    
-    const searchQuery = this.searchService.buildSearchQuery({
-      query: query as string,
-      ...(language !== undefined ? { language: language as string } : {}),
-      ...(chunk_type !== undefined ? { chunkType: chunk_type as ChunkType } : {}),
-      ...(file_path !== undefined ? { filePath: file_path as string } : {}),
-      ...(limit !== undefined ? { limit: limit as number } : {}),
-      ...(enable_hybrid !== undefined ? { enableHybrid: enable_hybrid as boolean } : {}),
-      ...(enable_reranking !== undefined ? { enableReranking: enable_reranking as boolean } : {}),
-      ...(prefer_implementation !== undefined ? { preferImplementation: prefer_implementation as boolean } : { preferImplementation: true }), // Default to true
-    });
-    
-    const { references, truncated, summary, metadata } = await this.searchService.searchForCodeReferences(searchQuery, max_tokens as number | undefined);
-    
-    return {
-      content: [{
-          type: 'text',
-        text: `Codebase search results for "${query}":\n\n` +
-              (summary ? `Summary: ${summary}\n\n` : '') +
-              references.map((ref: any, index: number) => {
-                const score = ref.score ? ` (Score: ${(ref.score * 100).toFixed(2)}%)` : '';
-                const typeIcon = ref.chunkType ? ` ${this.getChunkTypeIcon(ref.chunkType)}` : '';
-                const filePath = ref.path;
-                const startLine = ref.lines[0];
-                const endLine = ref.lines[1];
-                const navLink = `cursor://file?filePath=${encodeURIComponent(filePath)}&startLine=${startLine}&endLine=${endLine}`;
-                return `${index + 1}. **${ref.chunkType || 'Code'}${score}** ${typeIcon} - [${filePath}:${startLine}-${endLine}](${navLink})\n` +
-                       `\`\`\`${ref.language || 'text'}\n${ref.snippet}\n\`\`\``;
-              }).join('\n\n') +
-              (truncated ? '\n\n(Results truncated to fit context window)' : '') +
-              `\n\n_Search took ${metadata.searchTime.toFixed(2)}ms. Total results: ${metadata.totalResults}. Cache Hit: ${metadata.cacheHit ? 'Yes' : 'No'}. Hybrid Search Used: ${metadata.hybridUsed ? 'Yes' : 'No'}. Reranked: ${metadata.reranked ? 'Yes' : 'No'}_`
-      }]
-    };
-  }
-
-  private async handleGetHealthStatus(_args: any) {
-    const healthStatus = this.healthMonitor
-      ? await this.healthMonitor.getHealthStatus()
-      : await this.searchService.getHealthStatus();
-    const serviceStatuses = Object.entries(healthStatus.services)
-      .map(([name, svc]) => {
-        const latency = svc.latency !== undefined ? ` (Latency: ${svc.latency.toFixed(2)}ms)` : '';
-        const errorRate = svc.errorRate !== undefined ? ` (Error Rate: ${svc.errorRate.toFixed(2)}%)` : '';
-        const message = svc.message ? `: ${svc.message}` : '';
-        return `- ${name}: ${svc.status}${latency}${errorRate}${message}`;
-      }).join('\n');
-    const metrics = Object.entries(healthStatus.metrics)
-      .map(([name, value]) => `- ${name}: ${value.toFixed(2)}`)
-      .join('\n');
-    return {
-      content: [{
-          type: 'text',
-        text: `Health Status: ${healthStatus.status}\n` +
-              `Timestamp: ${healthStatus.timestamp.toISOString()}\n` +
-              `Version: ${healthStatus.version}\n` +
-              `MCP Schema Version: ${healthStatus.mcpSchemaVersion}\n\n` +
-              `Services:\n${serviceStatuses}\n\n` +
-              `Metrics:\n${metrics}`
-      }]
-    };
-  }
-
-  private async handleGetEnhancedStats(_args: any) {
-    const enhancedStats = this.searchService.getEnhancedSearchStats();
-    return {
-      content: [{
-          type: 'text',
-          text: `📊 **Enhanced Search Statistics**\n\n` +
-                `**Search Performance:**\n` +
-                `- Total queries: ${enhancedStats.totalQueries}\n` +
-                `- Cache hit rate: ${(enhancedStats.cacheHitRate * 100).toFixed(1)}%\n` +
-                `- Hybrid search usage: ${enhancedStats.hybridSearchUsage} queries\n` +
-                `- LLM re-ranking usage: ${enhancedStats.llmRerankerUsage} queries\n` +
-                `- Last query: ${enhancedStats.lastQuery.toISOString()}\n\n` +
-              ``
-      }]
-    };
-  }
-
-  private async handleClearSearchCache(_args: any) {
-    this.searchService.clearCaches();
-    return {
-      content: [{
-          type: 'text',
-        text: 'Successfully cleared search cache'
-      }]
-    };
-  }
-
-  private async handleInvalidateFileCache(args: any) {
-    this.searchService.invalidateFileCache(args.file_path as string);
-    return {
-      content: [{
-          type: 'text',
-        text: `Successfully invalidated cache for file: ${args.file_path}`
-      }]
-    };
-  }
-
-  private getChunkTypeIcon(chunkType: ChunkType): string {
-    switch (chunkType) {
-      case ChunkType.FUNCTION:
-        return '🚀';
-      case ChunkType.CLASS:
-        return '🧠';
-      case ChunkType.MODULE:
-        return '📦';
-      case ChunkType.INTERFACE:
-        return '👔';
-      case ChunkType.ENUM:
-        return '🎨';
-      case ChunkType.TYPE:
-        return '👤';
-      case ChunkType.VARIABLE:
-        return '👾';
-      case ChunkType.IMPORT:
-        return '🔗';
-      case ChunkType.COMMENT:
-        return '💬';
-      case ChunkType.METHOD:
-        return '⚡';
-      case ChunkType.PROPERTY:
-        return '⚙️';
-      case ChunkType.CONSTRUCTOR:
-        return '🏗️';
-      case ChunkType.NAMESPACE:
-        return '🏛️';
-      case ChunkType.DECORATOR:
-        return '✨';
-      case ChunkType.SECTION:
-        return '📚';
-      case ChunkType.CODE_BLOCK:
-        return '📃';
-      case ChunkType.PARAGRAPH:
-        return '✍️';
-      case ChunkType.LIST:
-        return '📜';
-      case ChunkType.TABLE:
-        return '📊';
-      case ChunkType.BLOCKQUOTE:
-        return '🗣️';
-      case ChunkType.GENERIC:
-        return '📄';
-      default:
-        return '❓';
-    }
-  }
 
   async run(): Promise<void> {
-    console.log('🚀 Starting Codebase Indexing MCP Server...');
+    this.log.info('Starting Codebase Indexing MCP Server (stdio)')
     
     // Initialize services with workspace detection
-    console.log('🔧 Initializing indexing and search services...');
+    this.log.debug('Initializing indexing and search services')
     await this.indexingService.initialize();
     await this.searchService.initialize();
     this.healthMonitor?.start?.()
@@ -1405,35 +924,28 @@ class CodebaseIndexingServer {
     // Show workspace information after initialization
     const currentWorkspace = this.workspaceManager.getCurrentWorkspace();
     if (currentWorkspace) {
-      console.log('\n🏗️  **Enhanced Multi-Workspace Configuration Active**');
-      console.log(`📂 Workspace: ${currentWorkspace.name} (${currentWorkspace.type})`);
-      console.log(`📊 Collection: ${currentWorkspace.collectionName}`);
-      console.log(`🔧 Workspace ID: ${currentWorkspace.id.substring(0, 16)}...`);
-      console.log(`🎯 Folders: ${currentWorkspace.folders.length} folder(s)`);
-      if (currentWorkspace.gitRemote) {
-        console.log(`🔗 Git Remote: ${currentWorkspace.gitRemote}`);
-      }
-      if (currentWorkspace.packageName) {
-        console.log(`📦 Package: ${currentWorkspace.packageName}`);
-      }
-      console.log('🎉 **Multi-workspace isolation ACTIVE - Zero cross-contamination**\n');
+      this.log.info({
+        workspace: currentWorkspace.name,
+        type: currentWorkspace.type,
+        collection: currentWorkspace.collectionName,
+        id: currentWorkspace.id.substring(0, 16),
+        folders: currentWorkspace.folders.length,
+        gitRemote: currentWorkspace.gitRemote,
+        packageName: currentWorkspace.packageName
+      }, 'Workspace initialized')
     }
     
     // Auto-index workspace if no index exists
     await this.ensureWorkspaceIndexed();
     
     // Start watching workspace for real-time updates
-    console.log('👁️  Starting workspace file watcher for real-time updates...');
+    this.log.info('Starting workspace file watcher for real-time updates')
     this.workspaceWatcher.start();
     
     // Connect to stdio transport
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    
-    console.error('✅ Codebase Indexing MCP Server running on stdio');
-    console.error('📂 Workspace:', this.workspaceDir);
-    console.error('🔍 Auto-indexing: Enabled');
-    console.error('👁️  File watching: Active');
+    this.log.info({ workspaceDir: this.workspaceDir, autoIndexing: true, fileWatching: true }, 'Codebase Indexing MCP Server running on stdio')
   }
 
   /**
@@ -1441,27 +953,23 @@ class CodebaseIndexingServer {
    */
   private async ensureWorkspaceIndexed(): Promise<void> {
     try {
-      console.log('🔍 Checking if workspace is already indexed...');
+      this.log.debug('Checking if workspace is already indexed')
       const existingChunks = await this.indexingService.countIndexedChunks();
       
       if (existingChunks === 0) {
-        console.log('📁 No existing index detected – automatically indexing workspace...');
-        console.log(`📂 Indexing directory: ${this.workspaceDir}`);
+        this.log.info({ workspaceDir: this.workspaceDir }, 'No existing index detected – indexing workspace')
         
         const startTime = Date.now();
         await this.indexingService.indexDirectory(this.workspaceDir);
         const duration = Date.now() - startTime;
         
         const finalCount = await this.indexingService.countIndexedChunks();
-        console.log(`✅ Workspace indexing completed in ${duration}ms`);
-        console.log(`📊 Indexed ${finalCount} code chunks`);
+        this.log.info({ ms: duration, chunks: finalCount }, 'Workspace indexing completed')
       } else {
-        console.log(`✅ Found existing index with ${existingChunks} code chunks`);
-        console.log('🔄 Workspace is ready - file watcher will handle incremental updates');
+        this.log.info({ chunks: existingChunks }, 'Found existing index; watcher will perform incremental updates')
       }
     } catch (error) {
-      console.error('❌ Error during workspace indexing:', error);
-      console.error('⚠️  Server will continue but workspace may not be fully indexed');
+      this.log.warn({ err: error }, 'Error during workspace indexing; server will continue')
       // Don't throw - allow server to start even if auto-indexing fails
     }
   }
@@ -1479,7 +987,8 @@ async function main() {
     const server = new CodebaseIndexingServer(config);
     await server.run();
   } catch (error) {
-    console.error('Failed to start server:', error);
+    const log = createModuleLogger('stdio-server')
+    log.error({ err: error }, 'Failed to start server')
     process.exit(1);
   }
 }
