@@ -365,6 +365,24 @@ The server is configured via environment variables:
 - `EXCLUDE_PATTERNS`: Comma-separated patterns to exclude (default: see config)
 - `SUPPORTED_EXTENSIONS`: Comma-separated file extensions to support (default: see config)
 
+#### Feature Flags
+
+These are validated and exposed on `config.flags` (camelCase):
+
+- `ENABLE_LLM_RERANKING` → `flags.enableLLMReranking` (default: true)
+- `ENABLE_HYBRID_SPARSE` → `flags.enableHybridSparse` (default: true)
+- `AUTO_INDEX_ON_CONNECT` → `flags.autoIndexOnConnect` (default: true)
+
+#### Reranker Base URL Normalization
+
+Provide `LLM_RERANKER_BASE_URL` and optionally `LLM_RERANKER_PROJECT_ID`.
+We normalize to ensure a single `/v1` suffix and avoid duplicating the project id.
+
+Examples:
+
+- `LLM_RERANKER_BASE_URL=https://api.us-east-1.langdb.ai/my-project/v1`
+- `LLM_RERANKER_BASE_URL=https://api.us-east-1.langdb.ai`, `LLM_RERANKER_PROJECT_ID=my-project`
+
 ### Example Configuration
 
 Create a `.env` file in the project root:

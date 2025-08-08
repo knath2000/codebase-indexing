@@ -6,6 +6,9 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { Config, ChunkType, SearchResult } from './types.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
+import { HealthMonitorService } from './services/health-monitor.js';
+import { VoyageClient } from './clients/voyage-client.js';
+import { QdrantVectorClient } from './clients/qdrant-client.js';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
@@ -347,7 +350,12 @@ export const TOOL_DEFINITIONS = [
 ];
 
 // Export function to setup MCP tools (used by HTTP server)
-export function setupMcpTools(server: Server, indexingService: IndexingService, searchService: SearchService): void {
+export function setupMcpTools(
+  server: Server,
+  indexingService: IndexingService,
+  searchService: SearchService,
+  healthMonitor?: HealthMonitorService
+): void {
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
@@ -660,17 +668,39 @@ export function setupMcpTools(server: Server, indexingService: IndexingService, 
             }],
             isError: false
           };
-        case 'get_health_status':
-          // TODO: Implement health monitoring service
-          return {
-            content: [{
-              type: 'text',
-              text: '🏥 **System Health Status**\n\n' +
-                    '✅ Search Service: Operational\n' +
-                    '✅ Indexing Service: Operational\n' +
-                    '⚠️ Health monitoring service not yet implemented'
-            }]
-          };
+        case 'get_health_status': {
+          try {
+            const health = healthMonitor
+              ? await healthMonitor.getHealthStatus()
+              : await searchService.getHealthStatus();
+            const serviceStatuses = Object.entries(health.services)
+              .map(([name, svc]) => {
+                const latency = svc.latency !== undefined ? ` (Latency: ${svc.latency.toFixed(2)}ms)` : '';
+                const errorRate = svc.errorRate !== undefined ? ` (Error Rate: ${svc.errorRate.toFixed(2)}%)` : '';
+                const message = svc.message ? `: ${svc.message}` : '';
+                return `- ${name}: ${svc.status}${latency}${errorRate}${message}`;
+              }).join('\n');
+            const metrics = Object.entries(health.metrics)
+              .map(([name, value]) => `- ${name}: ${value.toFixed(2)}`)
+              .join('\n');
+            return {
+              content: [{
+                type: 'text',
+                text: `Health Status: ${health.status}\n` +
+                      `Timestamp: ${health.timestamp.toISOString()}\n` +
+                      `Version: ${health.version}\n` +
+                      `MCP Schema Version: ${health.mcpSchemaVersion}\n\n` +
+                      `Services:\n${serviceStatuses}\n\n` +
+                      `Metrics:\n${metrics}`
+              }]
+            };
+          } catch (err) {
+            return {
+              content: [{ type: 'text', text: `Error retrieving health status: ${err instanceof Error ? err.message : String(err)}` }],
+              isError: true
+            }
+          }
+        }
         case 'get_enhanced_stats':
           const enhancedStats = searchService.getEnhancedSearchStats();
           return {
@@ -840,6 +870,8 @@ class CodebaseIndexingServer {
   private workspaceWatcher: WorkspaceWatcher;
   private workspaceManager: WorkspaceManager;
   private workspaceDir: string;
+  // Note: used for side effects via start(); referenced via this.healthMonitor in run()
+  private healthMonitor?: HealthMonitorService;
 
   constructor(config: Config) {
     this.server = new Server({
@@ -856,6 +888,15 @@ class CodebaseIndexingServer {
 
     this.indexingService = new IndexingService(config, this.workspaceManager);
     this.searchService = new SearchService(config, this.workspaceManager);
+    // Create health monitor (started in run())
+    const voyageClient = new VoyageClient(config.voyageApiKey)
+    const qdrantClient = new QdrantVectorClient(
+      config.qdrantUrl,
+      config.qdrantApiKey,
+      config.collectionName,
+      voyageClient.getEmbeddingDimension(config.embeddingModel)
+    )
+    this.healthMonitor = new HealthMonitorService(config, voyageClient, qdrantClient) as any
     this.workspaceDir = process.cwd();
     this.workspaceWatcher = new WorkspaceWatcher(
       this.workspaceDir,
@@ -1240,7 +1281,9 @@ class CodebaseIndexingServer {
   }
 
   private async handleGetHealthStatus(_args: any) {
-    const healthStatus = await this.searchService.getHealthStatus();
+    const healthStatus = this.healthMonitor
+      ? await this.healthMonitor.getHealthStatus()
+      : await this.searchService.getHealthStatus();
     const serviceStatuses = Object.entries(healthStatus.services)
       .map(([name, svc]) => {
         const latency = svc.latency !== undefined ? ` (Latency: ${svc.latency.toFixed(2)}ms)` : '';
@@ -1357,6 +1400,7 @@ class CodebaseIndexingServer {
     console.log('🔧 Initializing indexing and search services...');
     await this.indexingService.initialize();
     await this.searchService.initialize();
+    this.healthMonitor?.start?.()
     
     // Show workspace information after initialization
     const currentWorkspace = this.workspaceManager.getCurrentWorkspace();

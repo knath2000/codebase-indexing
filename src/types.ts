@@ -44,6 +44,7 @@ export const ConfigSchema = z.object({
   keywordSearchTimeoutMs: z.number().default(10000),
   keywordSearchMaxChunks: z.number().default(20000),
   searchCacheTTL: z.number().default(300), // 5 minutes
+  searchCacheMaxSize: z.number().default(500),
   contextWindowSize: z.number().default(32000), // tokens
   maxContextChunks: z.number().default(20),
   hybridSearchAlpha: z.number().default(0.7), // weight for dense vs sparse
@@ -51,7 +52,14 @@ export const ConfigSchema = z.object({
   mcpSchemaVersion: z.string().default('2024-11-05')
 });
 
-export type Config = z.infer<typeof ConfigSchema>;
+export type Config = z.infer<typeof ConfigSchema> & {
+  // Optional grouped surfaces for organization (back-compat: we keep flat too)
+  flags?: {
+    enableLLMReranking: boolean
+    enableHybridSparse: boolean
+    autoIndexOnConnect: boolean
+  }
+};
 
 // Code chunk types with enhanced metadata
 export interface CodeChunk {

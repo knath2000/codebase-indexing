@@ -4,6 +4,32 @@
 
 ---
 **Date:** 2025-08-08  
+**TaskRef:** "Configuration normalization, Health monitor authority, True LRU search cache, docs + redeploy (Railway)"
+
+Learnings:
+- Config must enforce mutual exclusion for reranker base URL vs project id; normalize to a single `/v1` suffix and avoid duplicating the project segment. Centralize via a helper to prevent drift.
+- Feature flags should be validated with a schema and exposed on a single `config.flags` surface to eliminate mixed casing and direct env access in services.
+- Health monitoring should be a dedicated aggregator with lifecycle (`start()/stop()`), structured logging, jittered timers, and clear degraded vs unhealthy states.
+- Search cache should be true LRU with configurable TTL/size, explicit `start()/stop()` for cleanup, and metrics (hit/miss/evictions).
+
+Difficulties:
+- exactOptionalPropertyTypes surfaced on optional fields (health recent results record); needed explicit `| undefined` in the tracked type.
+- Unused variable TS warning around health monitor field until used for lifecycle in stdio server and passed to HTTP tool handlers.
+
+Successes:
+- Implemented `normalizeRerankerBaseUrl(base, projId)` with cross-field validation and clamping for numeric ranges.
+- Added Zod-validated feature flags (`enableLLMReranking`, `enableHybridSparse`, `autoIndexOnConnect`) via `config.flags` and removed remaining direct env reads in touched services.
+- Promoted `HealthMonitorService` to single authority; added lifecycle, jitter, structured logging, and delegated `get_health_status` tool to it in both stdio and HTTP servers.
+- Upgraded `SearchCacheService` to true LRU, configurable TTL/size (`searchCacheTTL`, `searchCacheMaxSize`), lifecycle controls, and structured metrics; started cache in `SearchService.initialize()`.
+- Updated README with flags and reranker normalization docs. Clean TypeScript build green. Pushed to GitHub to trigger Railway auto-deploy.
+
+Improvements_Identified_For_Consolidation:
+- Generate CONFIGURATION.md from Zod schema (keys/defaults/examples) for discoverability.
+- Complete DI pass to remove remaining `process.env` reads (rate limiter, session store, voyage client opts) and group config by concern (embedding/qdrant/reranker/watcher/limits/privacy/features) with back-compat mapping.
+- Add health metrics to enhanced stats (counters, latency histograms) and reranker health probe.
+
+---
+**Date:** 2025-08-08  
 **TaskRef:** "LangDB custom reranker integration on Railway + Cursor MCP end‑to‑end validation"
 
 **Learnings:**

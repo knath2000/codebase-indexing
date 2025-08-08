@@ -1,8 +1,13 @@
-export interface FeatureFlags {
-  ENABLE_LLM_RERANKING: boolean
-  ENABLE_HYBRID_SPARSE: boolean
-  AUTO_INDEX_ON_CONNECT: boolean
-}
+import { z } from 'zod'
+
+// Normalized feature flags surface for consistent access across the app
+export const FeatureFlagsSchema = z.object({
+  enableLLMReranking: z.boolean().default(true),
+  enableHybridSparse: z.boolean().default(true),
+  autoIndexOnConnect: z.boolean().default(true),
+})
+
+export type FeatureFlags = z.infer<typeof FeatureFlagsSchema>
 
 function envBool(key: string, def: boolean): boolean {
   const val = process.env[key]
@@ -10,8 +15,15 @@ function envBool(key: string, def: boolean): boolean {
   return val === 'true' || val === '1'
 }
 
-export const featureFlags: FeatureFlags = {
-  ENABLE_LLM_RERANKING: envBool('ENABLE_LLM_RERANKING', true),
-  ENABLE_HYBRID_SPARSE: envBool('ENABLE_HYBRID_SPARSE', true),
-  AUTO_INDEX_ON_CONNECT: envBool('AUTO_INDEX_ON_CONNECT', true)
-} 
+/**
+ * Load and validate feature flags from environment variables, then normalize
+ * to our canonical camelCase surface.
+ */
+export function loadFeatureFlagsFromEnv(): FeatureFlags {
+  const raw = {
+    enableLLMReranking: envBool('ENABLE_LLM_RERANKING', true),
+    enableHybridSparse: envBool('ENABLE_HYBRID_SPARSE', true),
+    autoIndexOnConnect: envBool('AUTO_INDEX_ON_CONNECT', true),
+  }
+  return FeatureFlagsSchema.parse(raw)
+}

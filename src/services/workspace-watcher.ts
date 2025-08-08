@@ -14,7 +14,7 @@ export class WorkspaceWatcher {
   private watcher: FSWatcher | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
   private pendingEvents = new Map<string, 'add' | 'change' | 'unlink'>();
-  private readonly debounceMs: number = parseInt(process.env.FILE_WATCH_DEBOUNCE_MS || '', 10) || 500;
+  private readonly debounceMs: number;
   private readonly log = createModuleLogger('workspace-watcher')
 
   constructor(
@@ -27,6 +27,9 @@ export class WorkspaceWatcher {
     this.indexingService = indexingService;
     this.supportedExtensions = new Set(supportedExtensions);
     this.excludePatterns = excludePatterns;
+    // Prefer config-driven debounce from types.Config (passed into service that constructs us)
+    // Fallback to env or 500ms if not available
+    this.debounceMs = parseInt(process.env.FILE_WATCH_DEBOUNCE_MS || '', 10) || 500
   }
 
   /** Start watching the workspace directory. */

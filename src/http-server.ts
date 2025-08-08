@@ -7,6 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { loadConfig, validateConfig, printConfigSummary } from './config.js';
 import { IndexingService } from './services/indexing-service.js';
 import { SearchService } from './services/search-service.js';
+import { HealthMonitorService } from './services/health-monitor.js';
+import { VoyageClient } from './clients/voyage-client.js';
+import { QdrantVectorClient } from './clients/qdrant-client.js';
 import { WorkspaceWatcher } from './services/workspace-watcher.js';
 import { WorkspaceManager } from './services/workspace-manager.js';
 import { setupMcpTools, TOOL_DEFINITIONS } from './index.js';
@@ -151,6 +154,7 @@ let searchService: SearchService | null = null;
 let workspaceWatcher: WorkspaceWatcher | null = null;
 let workspaceManager: WorkspaceManager | null = null;
 let servicesInitialized = false;
+let healthMonitor: HealthMonitorService | null = null;
 
 // Store active sessions with SSE response objects
 const activeSessions = new Map<string, { 
@@ -179,6 +183,15 @@ async function initializeMcpServer() {
   console.log('diag: 5. IndexingService created');
   searchService = new SearchService(config, workspaceManager);
   console.log('diag: 6. SearchService created');
+  // Create health monitor (will be started after initialize())
+  const voyageClient = new VoyageClient(config.voyageApiKey)
+  const qdrantClient = new QdrantVectorClient(
+    config.qdrantUrl,
+    config.qdrantApiKey,
+    config.collectionName,
+    voyageClient.getEmbeddingDimension(config.embeddingModel)
+  )
+  healthMonitor = new HealthMonitorService(config, voyageClient, qdrantClient)
 
   // Create MCP server
   mcpServer = new Server(
@@ -195,7 +208,7 @@ async function initializeMcpServer() {
   console.log('diag: 7. MCP Server object created');
 
   // Setup MCP tools (register handlers on the server)
-  setupMcpTools(mcpServer, indexingService, searchService);
+  setupMcpTools(mcpServer, indexingService, searchService, healthMonitor || undefined);
   console.log('diag: 8. MCP tools setup');
 
   // Wire up an in-memory transport so we can invoke tool handlers locally via a client instance.
@@ -236,6 +249,7 @@ async function ensureServicesInitialized(): Promise<void> {
     // Initialize services with network calls
     await indexingService.initialize();
     await searchService.initialize();
+    healthMonitor?.start();
     
     // Setup workspace auto-indexing and file watching
     await ensureWorkspaceIndexed();

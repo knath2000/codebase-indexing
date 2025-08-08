@@ -1,6 +1,7 @@
 import { HealthStatus, ServiceHealth, Config } from '../types.js';
 import { VoyageClient } from '../clients/voyage-client.js';
 import { QdrantVectorClient } from '../clients/qdrant-client.js';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class HealthMonitorService {
   private config: Config;
@@ -9,6 +10,8 @@ export class HealthMonitorService {
   private qdrantClient: QdrantVectorClient;
   private lastHealthCheck: Date;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private readonly log = createModuleLogger('health-monitor')
+  private recentResults: Array<{ ts: number; ok: boolean; svc: string; latency: number; err?: string | undefined }>=[]
 
   constructor(config: Config, voyageClient: VoyageClient, qdrantClient: QdrantVectorClient) {
     this.config = config;
@@ -16,16 +19,14 @@ export class HealthMonitorService {
     this.voyageClient = voyageClient;
     this.qdrantClient = qdrantClient;
     this.lastHealthCheck = new Date();
-
-    // Start periodic health checks
-    this.startHealthChecks();
+    // Don't auto-start timers in ctor – call start() from bootstrap
   }
 
   /**
    * Get comprehensive health status
    */
   async getHealthStatus(): Promise<HealthStatus> {
-    console.log('🏥 [HealthMonitor] Performing health check...');
+    this.log.info('Performing health check...');
 
     const [qdrantHealth, voyageHealth, fileWatcherHealth] = await Promise.allSettled([
       this.checkQdrantHealth(),
@@ -63,7 +64,7 @@ export class HealthMonitorService {
     };
 
     this.lastHealthCheck = new Date();
-    console.log(`✅ [HealthMonitor] Health check complete: ${overallStatus}`);
+    this.log.info({ status: overallStatus }, 'Health check complete')
 
     return healthStatus;
   }
@@ -106,12 +107,14 @@ export class HealthMonitorService {
       }
 
     } catch (error) {
-      return {
+      const result: ServiceHealth = {
         status: 'unhealthy',
         latency: Date.now() - startTime,
         lastCheck: new Date(),
         message: `Qdrant error: ${error instanceof Error ? error.message : String(error)}`
       };
+      this.record('qdrant', false, result.latency!, result.message)
+      return result
     }
   }
 
@@ -125,20 +128,24 @@ export class HealthMonitorService {
       const isConnected = await this.voyageClient.testConnection();
       const latency = Date.now() - startTime;
 
-      return {
+      const result: ServiceHealth = {
         status: isConnected ? 'healthy' : 'unhealthy',
         latency,
         lastCheck: new Date(),
         message: isConnected ? 'Voyage AI operational' : 'Voyage AI connection failed'
       };
+      this.record('voyage', isConnected, latency, result.message)
+      return result
 
     } catch (error) {
-      return {
+      const result: ServiceHealth = {
         status: 'unhealthy',
         latency: Date.now() - startTime,
         lastCheck: new Date(),
         message: `Voyage AI error: ${error instanceof Error ? error.message : String(error)}`
       };
+      this.record('voyage', false, result.latency!, result.message)
+      return result
     }
   }
 
@@ -192,27 +199,30 @@ export class HealthMonitorService {
   /**
    * Start periodic health checks
    */
-  private startHealthChecks(): void {
-    // Run health checks every 5 minutes
+  start(): void {
+    if (this.healthCheckInterval) return
+    // Add small jitter (±10%) to avoid sync across instances
+    const base = 5 * 60 * 1000
+    const jitter = Math.round(base * (Math.random() * 0.2 - 0.1))
+    const interval = base + jitter
     this.healthCheckInterval = setInterval(async () => {
       try {
         await this.getHealthStatus();
       } catch (error) {
-        console.error('❌ [HealthMonitor] Periodic health check failed:', error);
+        this.log.warn({ err: error }, 'Periodic health check failed')
       }
-    }, 5 * 60 * 1000);
-
-    console.log('🏥 [HealthMonitor] Started periodic health checks (5 min intervals)');
+    }, interval);
+    this.log.info({ intervalMs: interval }, 'Started periodic health checks')
   }
 
   /**
    * Stop periodic health checks
    */
-  stopHealthChecks(): void {
+  stop(): void {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
-      console.log('🏥 [HealthMonitor] Stopped periodic health checks');
+      this.log.info('Stopped periodic health checks');
     }
   }
 
@@ -301,7 +311,12 @@ export class HealthMonitorService {
    * Cleanup resources
    */
   destroy(): void {
-    this.stopHealthChecks();
-    console.log('🏥 [HealthMonitor] Destroyed health monitor');
+    this.stop();
+    this.log.info('Destroyed health monitor');
+  }
+
+  private record(svc: string, ok: boolean, latency: number, err?: string) {
+    this.recentResults.push({ ts: Date.now(), ok, svc, latency, err })
+    if (this.recentResults.length > 100) this.recentResults.shift()
   }
 } 

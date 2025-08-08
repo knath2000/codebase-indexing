@@ -1,27 +1,17 @@
 # Active Context
 
-## Current Work Focus: MCP Server - Post-Volume Reset, Debug Logging, and Final Validation (July 17, 2025)
+## Current Work Focus: Configuration safety, health authority, and cache predictability (Aug 8, 2025)
 
-### ✅ **Production Validation & Troubleshooting Complete**
+### ✅ Completed in this session
 
-- **Volume Reset & Machine Cleanup**: All Fly.io volumes and machines were deleted and recreated to ensure a clean persistent storage environment.
-- **Debug Logging Added**: Enhanced debug logging in the code parser to trace chunk extraction and diagnose indexing issues.
-- **Rebuild & Redeploy**: MCP server rebuilt and redeployed to Fly.io with new debug logic.
-- **Comprehensive Tool Testing**: All 21 MCP tools tested in Cursor, including:
-  - Workspace detection, listing, and management
-  - Directory and file indexing, reindexing, and removal
-  - Semantic, function, class, and code pattern search (hybrid + LLM reranked)
-  - System health, enhanced stats, and indexing stats
-- **Chunking/Indexing Now Functional**: New files in `temp-sample-project` are now chunked and indexed (e.g., `big.ts` generates 3 chunks, semantic search returns correct results).
-- **System Status**: All tools green, production-ready, and superior to Cursor built-in search.
+- Config normalization: `normalizeRerankerBaseUrl()` added with cross-field validation and numeric clamping; feature flags validated via Zod and exposed as `config.flags`.
+- Health monitor: `HealthMonitorService` is the single aggregator with `start()/stop()`, jittered interval, structured logging; `get_health_status` delegates here.
+- Search cache: Upgraded to true LRU with configurable `searchCacheTTL` and `searchCacheMaxSize`, lifecycle controls, and metrics; started in `SearchService.initialize()`.
+- Docs: README updated (feature flags, reranker base URL rules). Clean build and code pushed to GitHub to trigger Railway redeploy.
 
-### **Key Troubleshooting Steps**
-- Identified that no chunks were being generated due to a combination of stale volume data and lack of debug visibility.
-- Performed full volume and machine reset on Fly.io.
-- Added debug logging to parser and confirmed chunk extraction pipeline.
-- Validated end-to-end: indexing, search, stats, and health all work for new and existing files.
+### **Notes & Next**
+- Plan to generate CONFIGURATION.md from Zod schema for better discoverability.
+- Finish DI pass to remove remaining direct env reads and group config by concern while preserving back-compat.
 
 ### **Current State: FULLY OPERATIONAL & PRODUCTION READY**
-- MCP server is now the recommended and validated solution for all codebase indexing and search in Cursor.
-- All advanced features (LLM reranking, hybrid search, workspace isolation) are active and validated.
-- System is ready for daily use and further enhancements. 
+- Safety improved (config validation), health is authoritative, cache is predictable and tunable. All advanced features active and validated.

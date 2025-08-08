@@ -7,9 +7,9 @@ export class VoyageClient {
   private baseURL: string;
   private readonly log = createModuleLogger('voyage-client')
 
-  constructor(apiKey: string) {
-    this.baseURL = process.env.VOYAGE_API_BASE_URL || 'https://api.voyageai.com/v1'
-    const timeoutMs = parseInt(process.env.VOYAGE_TIMEOUT_MS || '', 10) || 30000
+  constructor(apiKey: string, opts?: { baseURL?: string; timeoutMs?: number }) {
+    this.baseURL = opts?.baseURL || process.env.VOYAGE_API_BASE_URL || 'https://api.voyageai.com/v1'
+    const timeoutMs = opts?.timeoutMs ?? (parseInt(process.env.VOYAGE_TIMEOUT_MS || '', 10) || 30000)
     this.client = axios.create({
       baseURL: this.baseURL,
       headers: {

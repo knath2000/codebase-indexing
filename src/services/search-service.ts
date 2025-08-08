@@ -131,6 +131,8 @@ export class SearchService {
 
       console.log(`🔍 SearchService initialized for workspace: ${this.currentWorkspace.name}`);
       console.log(`📊 Using collection: ${this.currentWorkspace.collectionName}`);
+      // Start cache lifecycle once dependencies are confirmed
+      this.searchCache.start()
     } catch (error) {
       throw new Error(`Failed to initialize search service: ${error}`);
     }

@@ -1,22 +1,39 @@
 import { SearchResult, SearchQuery, SearchCache, Config } from '../types.js';
 import { createHash } from 'crypto';
+import { createModuleLogger } from '../logging/logger.js'
 
 export class SearchCacheService {
   private cache: Map<string, SearchCache>;
+  private lruList: Map<string, number>; // key -> lastAccessTs
   private ttl: number;
   private maxSize: number;
   private hitCount: number;
   private missCount: number;
+  private cleanupTimer: NodeJS.Timeout | null = null;
+  private readonly log = createModuleLogger('search-cache')
 
   constructor(config: Config) {
     this.cache = new Map();
-    this.ttl = config.searchCacheTTL * 1000; // Convert to milliseconds
-    this.maxSize = 1000; // Maximum number of cached queries
+    this.lruList = new Map();
+    this.ttl = (config.searchCacheTTL ?? 300) * 1000; // ms
+    this.maxSize = (config as any).searchCacheMaxSize ?? 500;
     this.hitCount = 0;
     this.missCount = 0;
+  }
 
-    // Periodic cleanup of expired entries
-    setInterval(() => this.cleanup(), this.ttl);
+  start(): void {
+    if (this.cleanupTimer) return
+    this.cleanupTimer = setInterval(() => this.cleanup(), this.ttl)
+    this.log.info({ ttlMs: this.ttl, maxSize: this.maxSize }, 'Search cache started')
+  }
+
+  stop(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer)
+      this.cleanupTimer = null
+      this.log.info('Search cache stopped')
+    }
+    this.clear()
   }
 
   /**
@@ -34,12 +51,14 @@ export class SearchCacheService {
     // Check if cache entry has expired
     if (Date.now() - cached.timestamp.getTime() > this.ttl) {
       this.cache.delete(key);
+      this.lruList.delete(key)
       this.missCount++;
       return null;
     }
 
     this.hitCount++;
-    console.log(`🎯 [SearchCache] Cache hit for query: "${query.query}"`);
+    this.touch(key)
+    this.log.debug({ query: query.query }, 'Cache hit');
     return cached.results;
   }
 
@@ -53,11 +72,8 @@ export class SearchCacheService {
     }
 
     const key = this.generateCacheKey(query);
-    
-    // Implement LRU eviction if cache is full
-    if (this.cache.size >= this.maxSize) {
-      this.evictOldest();
-    }
+    // True LRU eviction
+    if (this.cache.size >= this.maxSize) this.evictLRU()
 
     const cacheEntry: SearchCache = {
       query: query.query,
@@ -73,7 +89,8 @@ export class SearchCacheService {
     };
 
     this.cache.set(key, cacheEntry);
-    console.log(`💾 [SearchCache] Cached ${results.length} results for query: "${query.query}"`);
+    this.touch(key)
+    this.log.debug({ query: query.query, count: results.length }, 'Cached results');
   }
 
   /**
@@ -82,11 +99,11 @@ export class SearchCacheService {
   private generateCacheKey(query: SearchQuery): string {
     const keyData = {
       query: query.query.toLowerCase().trim(),
-      language: query.language || '',
-      chunkType: query.chunkType || '',
-      filePath: query.filePath || '',
-      limit: query.limit || 10,
-      threshold: query.threshold || 0.7
+      language: query.language ?? '',
+      chunkType: query.chunkType ?? '',
+      filePath: query.filePath ?? '',
+      limit: query.limit ?? 10,
+      threshold: query.threshold ?? 0.7
     };
 
     const keyString = JSON.stringify(keyData);
@@ -96,20 +113,17 @@ export class SearchCacheService {
   /**
    * Evict the oldest cache entry (LRU)
    */
-  private evictOldest(): void {
-    let oldestKey: string | null = null;
-    let oldestTime = Date.now();
-
-    for (const [key, entry] of this.cache) {
-      if (entry.timestamp.getTime() < oldestTime) {
-        oldestTime = entry.timestamp.getTime();
-        oldestKey = key;
-      }
+  private evictLRU(): void {
+    // Find least-recently-used by lastAccess timestamp
+    let lruKey: string | undefined
+    let lruTs = Infinity
+    for (const [key, ts] of this.lruList.entries()) {
+      if (ts < lruTs) { lruTs = ts; lruKey = key }
     }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-      console.log(`🗑️ [SearchCache] Evicted oldest cache entry`);
+    if (lruKey) {
+      this.cache.delete(lruKey)
+      this.lruList.delete(lruKey)
+      this.log.debug({ key: lruKey }, 'Evicted LRU entry')
     }
   }
 
@@ -126,11 +140,9 @@ export class SearchCacheService {
       }
     }
 
-    keysToDelete.forEach(key => this.cache.delete(key));
+    keysToDelete.forEach(key => { this.cache.delete(key); this.lruList.delete(key) });
 
-    if (keysToDelete.length > 0) {
-      console.log(`🧹 [SearchCache] Cleaned up ${keysToDelete.length} expired cache entries`);
-    }
+    if (keysToDelete.length > 0) this.log.debug({ count: keysToDelete.length }, 'Cleaned expired entries')
   }
 
   /**
@@ -182,9 +194,10 @@ export class SearchCacheService {
   clear(): void {
     const size = this.cache.size;
     this.cache.clear();
+    this.lruList.clear();
     this.hitCount = 0;
     this.missCount = 0;
-    console.log(`🗑️ [SearchCache] Cleared ${size} cache entries`);
+    this.log.info({ size }, 'Cleared cache')
   }
 
   /**
@@ -271,12 +284,12 @@ export class SearchCacheService {
    * Warm up the cache with common queries
    */
   async warmUp(commonQueries: string[]): Promise<void> {
-    console.log(`🔥 [SearchCache] Warming up cache with ${commonQueries.length} common queries`);
+    this.log.info({ count: commonQueries.length }, 'Warming up cache');
     
     // This would typically be called with a search service instance
     // For now, we just log the intent
     for (const query of commonQueries) {
-      console.log(`🔥 [SearchCache] Would warm up: "${query}"`);
+      this.log.debug({ query }, 'Warm-up candidate');
     }
   }
 
@@ -305,5 +318,9 @@ export class SearchCacheService {
     }
 
     return true;
+  }
+
+  private touch(key: string) {
+    this.lruList.set(key, Date.now())
   }
 } 

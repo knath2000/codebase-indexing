@@ -1,18 +1,12 @@
 # Progress: MCP Codebase Indexing Server
 
-## Current Status: 🟢 PRODUCTION READY & FULLY OPERATIONAL & COMPREHENSIVELY TESTED (July 17, 2025)
+## Current Status: 🟢 PRODUCTION READY & FULLY OPERATIONAL (Aug 8, 2025)
 
-**Recent Major Update:**
-- **Volume Reset & Machine Cleanup**: All Fly.io volumes and machines deleted and recreated to ensure clean persistent storage.
-- **Debug Logging Added**: Parser updated to print chunk extraction details for each file.
-- **Rebuild & Redeploy**: MCP server rebuilt and redeployed to Fly.io.
-- **Comprehensive Tool Test**: All 21 MCP tools tested in Cursor:
-  - Workspace detection, listing, and management
-  - Directory and file indexing, reindexing, and removal
-  - Semantic, function, class, and code pattern search (hybrid + LLM reranked)
-  - System health, enhanced stats, and indexing stats
-- **Chunking/Indexing Now Functional**: New files in temp-sample-project are chunked and indexed (e.g., big.ts generates 3 chunks, semantic search returns correct results).
-- **System Status**: All tools green, production-ready, and superior to Cursor built-in search.
+**Recent Major Update (this session):**
+- Configuration safety: Added reranker base URL normalization and Zod-validated feature flags attached to `config.flags`.
+- Health authority: `HealthMonitorService` designated as single health aggregator; `get_health_status` delegated.
+- Cache predictability: True LRU search cache with lifecycle and metrics; TTL/size configurable.
+- Documentation: README updated (flags and reranker normalization). Clean build and code pushed to GitHub to trigger Railway redeploy.
 
 **Troubleshooting & Validation Process:**
 - Identified chunking issue due to stale volume and lack of debug visibility.

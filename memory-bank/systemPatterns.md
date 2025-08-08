@@ -22,6 +22,8 @@ Our MCP codebase indexing server follows a modular, service-oriented architectur
 5. **VoyageClient**: Embedding generation
 6. **LLMRerankerService**: Claude-powered result ranking
 7. **HybridSearchService**: Dense + sparse search combination
+8. **HealthMonitorService**: Authoritative health aggregator with lifecycle, jittered intervals, structured logging, and degraded/unhealthy states
+9. **SearchCacheService (LRU)**: True LRU eviction with configurable TTL/size, lifecycle `start()/stop()`, and metrics (hit/miss/evictions)
 
 ### Multi-Workspace Architecture
 
