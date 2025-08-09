@@ -113,6 +113,7 @@ export function loadConfig(): Config {
     ],
     supportedExtensions: process.env.SUPPORTED_EXTENSIONS?.split(',') || [
       '.ts', '.js', '.tsx', '.jsx',
+      '.vue',
       '.py', '.java', '.cpp', '.c', '.h',
       '.go', '.rs', '.cs', '.php',
       '.rb', '.swift', '.kt', '.scala',
