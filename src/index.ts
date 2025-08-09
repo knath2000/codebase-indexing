@@ -309,6 +309,19 @@ export const TOOL_DEFINITIONS = [
     }
   },
   {
+    name: 'ingest_git_repository',
+    description: 'Clone a Git repository into a server-visible workspace and index it. Reduces reliance on local file paths by performing ingestion on Railway.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo_url: { type: 'string', description: 'Git repository URL (https or ssh)' },
+        branch: { type: 'string', description: 'Branch or ref to clone (default: default branch)' },
+        workspace_name: { type: 'string', description: 'Optional name for the workspace folder (defaults from repo)' }
+      },
+      required: ['repo_url']
+    }
+  },
+  {
     name: 'get_workspace_info',
     description: 'Get information about the current workspace and detected project structure',
     inputSchema: {
@@ -399,6 +412,59 @@ export function setupMcpTools(
       }
 
       switch (name) {
+        case 'ingest_git_repository': {
+          const { repo_url, branch, workspace_name } = args as any;
+          try {
+            const wsManager = (indexingService as any).workspaceManager || (searchService as any).workspaceManager;
+            const fs = await import('fs/promises');
+            const path = await import('path');
+            const cp = await import('child_process');
+            const util = await import('util');
+            const exec = util.promisify(cp.exec);
+            const workspacesRoot = '/app/workspaces';
+            await fs.mkdir(workspacesRoot, { recursive: true });
+            const nameFromRepo = (repo_url as string).split('/').pop()?.replace(/\.git$/, '') || 'repo';
+            const folder = workspace_name || nameFromRepo;
+            const targetDir = path.join(workspacesRoot, folder);
+            // If dir exists, pull latest; else, clone
+            try {
+              await fs.access(targetDir);
+              await exec(`git -C ${JSON.stringify(targetDir)} fetch --all --prune`);
+              const checkoutRef = branch ? branch : 'HEAD';
+              await exec(`git -C ${JSON.stringify(targetDir)} checkout ${checkoutRef}`);
+              await exec(`git -C ${JSON.stringify(targetDir)} pull --ff-only`);
+            } catch {
+              const cloneCmd = branch
+                ? `git clone --depth 1 --branch ${branch} ${JSON.stringify(repo_url)} ${JSON.stringify(targetDir)}`
+                : `git clone --depth 1 ${JSON.stringify(repo_url)} ${JSON.stringify(targetDir)}`;
+              await exec(cloneCmd);
+            }
+
+            // Detect/register workspace and initialize collection
+            const detected = await wsManager.detectCurrentWorkspace(targetDir);
+            if (indexingService && (indexingService as any).updateQdrantClientForWorkspace) {
+              (indexingService as any).updateQdrantClientForWorkspace(detected);
+              await (indexingService as any).qdrantClient.initializeCollection?.();
+            }
+            if (searchService && (searchService as any).updateQdrantClientForWorkspace) {
+              (searchService as any).updateQdrantClientForWorkspace(detected);
+              await (searchService as any).qdrantClient.initializeCollection?.();
+            }
+            // Index
+            const stats = await indexingService.indexDirectory(detected.rootPath);
+            return {
+              content: [{
+                type: 'text',
+                text: `✅ Ingested Git repo and indexed workspace "${detected.name}"
+Path: ${detected.rootPath}
+Collection: ${detected.collectionName}
+Files: ${stats.totalFiles}, Chunks: ${stats.totalChunks}`
+              }]
+            };
+          } catch (err: any) {
+            return { content: [{ type: 'text', text: `❌ Git ingestion failed: ${err?.message || String(err)}` }], isError: true };
+          }
+        }
         case 'index_directory':
           const dirStats = await indexingService.indexDirectory(args.directory_path as string);
           return {
@@ -741,16 +807,17 @@ export function setupMcpTools(
             };
           }
           try {
+            const cwd = process.cwd();
             // Detect/register workspace at provided path (emits workspace-changed)
             const detected = await wsManager.detectCurrentWorkspace(targetPath);
             // Ensure services are pointed at the new collection
             if (indexingService && (indexingService as any).updateQdrantClientForWorkspace) {
               (indexingService as any).updateQdrantClientForWorkspace(detected);
-              await (indexingService as any).qdrantClient.initializeCollection?.();
+              try { await (indexingService as any).qdrantClient.initializeCollection?.(); } catch {}
             }
             if (searchService && (searchService as any).updateQdrantClientForWorkspace) {
               (searchService as any).updateQdrantClientForWorkspace(detected);
-              await (searchService as any).qdrantClient.initializeCollection?.();
+              try { await (searchService as any).qdrantClient.initializeCollection?.(); } catch {}
             }
             // Optionally auto-index now (guarded by feature flag)
             const shouldAuto = ((indexingService as any).config?.flags?.autoIndexOnConnect) === true;
@@ -765,7 +832,8 @@ export function setupMcpTools(
                 text: `✅ Detected and switched to workspace "${detected.name}"
 Path: ${detected.rootPath}
 Collection: ${detected.collectionName}
-Auto-index: ${shouldAuto ? 'triggered' : 'skipped'}`
+Auto-index: ${shouldAuto ? 'triggered' : 'skipped'}
+Diagnostics:\nProvided: ${targetPath}\nServer CWD: ${cwd}`
               }]
             };
           } catch (err: any) {

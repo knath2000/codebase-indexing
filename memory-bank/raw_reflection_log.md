@@ -4,6 +4,27 @@
 
 ---
 **Date:** 2025-08-08  
+**TaskRef:** "Multi-workspace auto-indexing, host/container path mismatch fix, new tool for path-based switching, GitHub push to Railway"
+
+Learnings:
+- Workspace isolation must be event-driven. Emitting `workspace-changed` and reacting in services ensures collections switch instantly and remain isolated.
+- Clearing caches on workspace switch prevents cross-workspace contamination in search results.
+- For reranking and Qdrant health, initializing the new collection immediately after switch avoids transient degraded health.
+- Operationally, relying on Railway with GitHub auto-deploys minimizes local machine dependencies.
+
+Difficulties:
+- Separate Cursor window using host paths (`/Users/...`) while server context referenced `/app` led to zero-chunk indexing. Root cause: path visibility mismatch.
+
+Successes:
+- Added `detect_and_switch_workspace` tool to detect/register a workspace by absolute path, switch services to its collection, ensure collection, and auto-index if enabled.
+- IndexingService & SearchService now listen to `workspace-changed`: update Qdrant client, init collection, auto-index (IndexingService), and clear caches (SearchService).
+- Pushed changes to GitHub (Railway redeploy triggered), aligning with our deploy strategy.
+
+Improvements_Identified_For_Consolidation:
+- Add server-side validation/logging to print resolved root path vs provided path when switching to aid path mismatch diagnosis.
+- Document container mount requirements and provide examples for binding host paths to `/app`.
+---
+**Date:** 2025-08-08  
 **TaskRef:** "Configuration normalization, Health monitor authority, True LRU search cache, docs + redeploy (Railway)"
 
 Learnings:

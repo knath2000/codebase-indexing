@@ -188,3 +188,13 @@ New Directory Detected → Workspace Detection → Collection Switch → Service
 - **Performance Isolation**: Workspace operations don't interfere
 
 Our multi-workspace implementation provides superior isolation, performance, and features compared to Cursor's built-in capabilities, while maintaining full compatibility with development workflows. 
+
+## Workspace Switching Tool & Event Pattern (Aug 8, 2025)
+
+- New MCP tool: `detect_and_switch_workspace`.
+  - Inputs: `{ path: string }` absolute path to workspace root.
+  - Behavior: Detect/register workspace → emit `workspace-changed` → services switch Qdrant collection and initialize → optional auto-index per `flags.autoIndexOnConnect`.
+- Services pattern on `workspace-changed`:
+  - IndexingService: `updateQdrantClientForWorkspace`, `initializeCollection`, conditional `indexDirectory(rootPath)`.
+  - SearchService: `updateQdrantClientForWorkspace`, `initializeCollection`, `clearCaches()` to avoid cross-workspace leakage.
+- Deployment: Changes pushed to GitHub to trigger Railway redeploy; Cursor reconnect then runs the tool to bind to host paths.

@@ -15,6 +15,7 @@
 ### **Notes & Next**
 - Plan to generate CONFIGURATION.md from Zod schema for better discoverability.
 - Finish DI pass to remove remaining direct env reads and group config by concern while preserving back-compat.
+- Validate multi-workspace flows in separate Cursor windows using new `detect_and_switch_workspace` tool; confirm non-zero chunks and healthy collections for host paths.
 
 ### **Current State: FULLY OPERATIONAL & PRODUCTION READY**
 - Safety improved (config validation), health is authoritative, cache is predictable and tunable. All advanced features active and validated.

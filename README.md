@@ -432,6 +432,7 @@ The server provides a comprehensive toolset organized by functionality:
 - **`reindex_file`**: Re-index a file (force update)
 - **`remove_file`**: Remove a file from the index
 - **`clear_index`**: Clear the entire search index
+- **`ingest_git_repository`**: Clone a Git repo on the server (Railway) and index it. Inputs: `repo_url`, optional `branch`, optional `workspace_name`. This avoids local file path issues and keeps ingestion fully remote.
 
 </details>
 

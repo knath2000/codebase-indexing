@@ -45,15 +45,25 @@ export class QdrantVectorClient {
       );
 
       if (!collectionExists) {
-        await this.client.createCollection(this.collectionName, {
-          vectors: {
-            size: this.embeddingDimension,
-            distance: 'Cosine'
+        try {
+          await this.client.createCollection(this.collectionName, {
+            vectors: {
+              size: this.embeddingDimension,
+              distance: 'Cosine'
+            }
+          });
+          this.log.info({ collection: this.collectionName }, 'Created collection')
+        } catch (createErr) {
+          const emsg = String(createErr).toLowerCase();
+          // Gracefully handle race or pre-existing collection
+          if (emsg.includes('already exists') || emsg.includes('conflict') || emsg.includes('409')) {
+            this.log.warn({ collection: this.collectionName }, 'Collection already exists (conflict). Proceeding');
+          } else {
+            throw createErr;
           }
-        });
-        this.log.info({ collection: this.collectionName }, 'Created collection')
-        
-        // Create payload indexes for filtering capabilities
+        }
+
+        // Ensure payload indexes for filtering capabilities (idempotent)
         await this.createPayloadIndexes();
       } else {
         // Check if existing collection has correct dimensions
@@ -70,6 +80,17 @@ export class QdrantVectorClient {
         }
       }
     } catch (error) {
+      const emsg = String(error).toLowerCase();
+      // If we hit a late conflict here, treat as non-fatal and continue with ensuring indexes
+      if (emsg.includes('already exists') || emsg.includes('conflict') || emsg.includes('409')) {
+        this.log.warn({ collection: this.collectionName }, 'Initialize conflict detected. Ensuring payload indexes and continuing');
+        try {
+          await this.createPayloadIndexes();
+          return;
+        } catch (idxErr) {
+          this.log.error({ err: idxErr }, 'Failed ensuring payload indexes after conflict');
+        }
+      }
       throw new Error(`Failed to initialize collection: ${error}`);
     }
   }

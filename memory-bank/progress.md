@@ -8,6 +8,7 @@
 - Cache predictability: True LRU search cache with lifecycle and metrics; TTL/size configurable.
 - Services logging & structure: Structured logging added to `SearchService`, `CodeParser`, `HybridSearchService`, `WorkspaceManager`, and `SearchCacheService`. Centralized stdio MCP tool wiring via `setupMcpTools`.
 - Documentation: README updated (flags, reranker normalization, and endpoint docs). Clean build and code pushed to GitHub to trigger Railway redeploy.
+- Multi-workspace UX: Added `detect_and_switch_workspace` tool; services now auto-switch collections, initialize, and auto-index on `workspace-changed`; caches cleared on switch to prevent cross-workspace leakage.
 
 **Troubleshooting & Validation Process:**
 - Identified chunking issue due to stale volume and lack of debug visibility.
@@ -16,7 +17,7 @@
 - Validated end-to-end: indexing, search, stats, and health all work for new and existing files.
 
 **Current State:**
-- MCP server is now the recommended and validated solution for all codebase indexing and search in Cursor.
+- MCP server is now the recommended and validated solution for all codebase indexing and search in Cursor. Railway is the primary execution environment; local machine used only when necessary.
 - All advanced features (LLM reranking, hybrid search, workspace isolation) are active and validated.
 - System is ready for daily use and further enhancements.
 
