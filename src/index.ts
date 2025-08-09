@@ -322,6 +322,51 @@ export const TOOL_DEFINITIONS = [
     }
   },
   {
+    name: 'get_github_app_install_url',
+    description: 'Return the GitHub App installation URL for granting repo access without PATs',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'ingest_github_app_repo',
+    description: 'Ingest a GitHub repo using a short-lived installation token (no PAT).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        owner: { type: 'string' },
+        repo: { type: 'string' },
+        ref: { type: 'string', description: 'branch or tag (optional)' },
+        workspace_name: { type: 'string' }
+      },
+      required: ['owner','repo']
+    }
+  },
+  {
+    name: 'chunk_and_upload',
+    description: 'Upload pre-chunked code from the client for embedding (local-first, no repo auth).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        root_path: { type: 'string', description: 'Logical workspace root (metadata only)' },
+        chunks: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              startLine: { type: 'number' },
+              endLine: { type: 'number' },
+              language: { type: 'string' },
+              chunkType: { type: 'string' },
+              content: { type: 'string' },
+            },
+            required: ['path','startLine','endLine','language','chunkType','content']
+          }
+        }
+      },
+      required: ['chunks']
+    }
+  },
+  {
     name: 'get_workspace_info',
     description: 'Get information about the current workspace and detected project structure',
     inputSchema: {
@@ -412,6 +457,85 @@ export function setupMcpTools(
       }
 
       switch (name) {
+        case 'get_github_app_install_url': {
+          const appId = process.env.GITHUB_APP_ID
+          const url = appId
+            ? `https://github.com/apps/${process.env.GITHUB_APP_SLUG || 'your-app'}/installations/new`
+            : 'GitHub App not configured. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY'
+          return { content: [{ type: 'text', text: url }] }
+        }
+        case 'ingest_github_app_repo': {
+          const { owner, repo, ref, workspace_name } = args as any
+          try {
+            const { GitHubAppClient } = await import('./clients/github-app-client.js')
+            const appId = process.env.GITHUB_APP_ID || ''
+            const privateKey = process.env.GITHUB_APP_PRIVATE_KEY || ''
+            const gh = new GitHubAppClient(appId, privateKey)
+            const instId = await gh.getInstallationIdForRepo(owner, repo)
+            const token = await gh.createInstallationAccessToken(instId)
+            const fs = await import('fs/promises')
+            const path = await import('path')
+            const cp = await import('child_process')
+            const util = await import('util')
+            const exec = util.promisify(cp.exec)
+            const workspacesRoot = '/app/workspaces'
+            await fs.mkdir(workspacesRoot, { recursive: true })
+            const folder = workspace_name || `${owner}-${repo}`
+            const targetDir = path.join(workspacesRoot, folder)
+            const archiveRef = ref || 'HEAD'
+            const archiveUrl = `https://api.github.com/repos/${owner}/${repo}/tarball/${archiveRef}`
+            // Download and extract archive using tar with auth header
+            await fs.mkdir(targetDir, { recursive: true })
+            const curl = `curl -L -H "Authorization: Bearer ${token}" -H "Accept: application/vnd.github+json" ${archiveUrl}`
+            const extract = `tar -xz --strip-components=1 -C ${JSON.stringify(targetDir)}`
+            await exec(`${curl} | ${extract}`)
+            const wsManager = (indexingService as any).workspaceManager || (searchService as any).workspaceManager
+            const detected = await wsManager.detectCurrentWorkspace(targetDir)
+            if (indexingService && (indexingService as any).updateQdrantClientForWorkspace) {
+              (indexingService as any).updateQdrantClientForWorkspace(detected)
+              await (indexingService as any).qdrantClient.initializeCollection?.()
+            }
+            if (searchService && (searchService as any).updateQdrantClientForWorkspace) {
+              (searchService as any).updateQdrantClientForWorkspace(detected)
+              await (searchService as any).qdrantClient.initializeCollection?.()
+            }
+            const stats = await indexingService.indexDirectory(detected.rootPath)
+            return { content: [{ type: 'text', text: `✅ Ingested via GitHub App and indexed ${owner}/${repo} (${archiveRef})\nPath: ${detected.rootPath}\nFiles: ${stats.totalFiles}, Chunks: ${stats.totalChunks}` }] }
+          } catch (err: any) {
+            return { content: [{ type: 'text', text: `❌ GitHub App ingest failed: ${err?.message || String(err)}` }], isError: true }
+          }
+        }
+        case 'chunk_and_upload': {
+          const { chunks } = args as any
+          try {
+            // Build minimal CodeChunk array and embed directly
+            const mapped = (chunks as any[]).map((c, i) => ({
+              id: `${i}`,
+              content: c.content,
+              filePath: c.path,
+              language: c.language,
+              startLine: c.startLine,
+              endLine: c.endLine,
+              chunkType: (c.chunkType || 'generic').toLowerCase(),
+              functionName: undefined,
+              className: undefined,
+              moduleName: undefined,
+              contentHash: '',
+              metadata: {
+                fileSize: c.content.length,
+                lastModified: Date.now(),
+                language: c.language,
+                extension: (c.path.split('.').pop() || '').toLowerCase(),
+                relativePath: c.path,
+                isTest: false,
+              }
+            }))
+            await (indexingService as any).embedAndStore?.(mapped)
+            return { content: [{ type: 'text', text: `✅ Uploaded ${mapped.length} chunks for embedding` }] }
+          } catch (err: any) {
+            return { content: [{ type: 'text', text: `❌ chunk_and_upload failed: ${err?.message || String(err)}` }], isError: true }
+          }
+        }
         case 'ingest_git_repository': {
           const { repo_url, branch, workspace_name } = args as any;
           try {

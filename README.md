@@ -433,6 +433,9 @@ The server provides a comprehensive toolset organized by functionality:
 - **`remove_file`**: Remove a file from the index
 - **`clear_index`**: Clear the entire search index
 - **`ingest_git_repository`**: Clone a Git repo on the server (Railway) and index it. Inputs: `repo_url`, optional `branch`, optional `workspace_name`. This avoids local file path issues and keeps ingestion fully remote.
+ - **`get_github_app_install_url`**: Return a URL to install the GitHub App for least‑privilege repo access (no PATs needed).
+ - **`ingest_github_app_repo`**: Ingest a private repo via a GitHub App installation token. Inputs: `owner`, `repo`, optional `ref`, optional `workspace_name`.
+ - **`chunk_and_upload`**: Upload precomputed chunks from the client (local‑first indexing) to embed without repo auth.
 
 </details>
 
