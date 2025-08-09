@@ -426,6 +426,15 @@ export function setupMcpTools(
             const nameFromRepo = (repo_url as string).split('/').pop()?.replace(/\.git$/, '') || 'repo';
             const folder = workspace_name || nameFromRepo;
             const targetDir = path.join(workspacesRoot, folder);
+            // Try to ensure CA certificates exist to prevent Git SSL errors
+            try {
+              await fs.access('/etc/ssl/certs/ca-certificates.crt');
+            } catch {
+              try { await exec('which apk >/dev/null 2>&1 && apk add --no-cache ca-certificates || true'); } catch {}
+              try { await exec('which apt-get >/dev/null 2>&1 && (apt-get update && apt-get install -y ca-certificates) || true'); } catch {}
+              try { await exec('which update-ca-certificates >/dev/null 2>&1 && update-ca-certificates || true'); } catch {}
+              try { await exec('git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt'); } catch {}
+            }
             // If dir exists, pull latest; else, clone
             try {
               await fs.access(targetDir);
@@ -437,7 +446,21 @@ export function setupMcpTools(
               const cloneCmd = branch
                 ? `git clone --depth 1 --branch ${branch} ${JSON.stringify(repo_url)} ${JSON.stringify(targetDir)}`
                 : `git clone --depth 1 ${JSON.stringify(repo_url)} ${JSON.stringify(targetDir)}`;
-              await exec(cloneCmd);
+              try {
+                await exec(cloneCmd);
+              } catch (e: any) {
+                const emsg = String(e?.stderr || e?.message || e).toLowerCase();
+                if (emsg.includes('certificate') || emsg.includes('ssl') || emsg.includes('ca file') || emsg.includes('unable to get local issuer')) {
+                  // Retry once after re-ensuring CA certs
+                  try { await exec('which apk >/dev/null 2>&1 && apk add --no-cache ca-certificates || true'); } catch {}
+                  try { await exec('which apt-get >/dev/null 2>&1 && (apt-get update && apt-get install -y ca-certificates) || true'); } catch {}
+                  try { await exec('which update-ca-certificates >/dev/null 2>&1 && update-ca-certificates || true'); } catch {}
+                  try { await exec('git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt'); } catch {}
+                  await exec(cloneCmd);
+                } else {
+                  throw e;
+                }
+              }
             }
 
             // Detect/register workspace and initialize collection
