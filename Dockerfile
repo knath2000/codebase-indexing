@@ -12,6 +12,8 @@ RUN apt-get update \
     make \
     g++ \
     git \
+    ca-certificates \
+ && update-ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Set C++ flags to enable exceptions for native module compilation
@@ -44,6 +46,9 @@ RUN npm prune --omit=dev --legacy-peer-deps
 # Create non-root user for Debian
 RUN groupadd -g 1001 nodejs \
  && useradd -u 1001 -g nodejs -s /usr/sbin/nologin mcp
+
+# Ensure git uses the system CA bundle for HTTPS (applies to all users)
+RUN git config --system http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 
 # Change ownership of the app directory
 RUN chown -R mcp:nodejs /app
